@@ -65,10 +65,18 @@ export async function ensureDatabase() {
         discount_approval_reference TEXT
       )
     `),
-    db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_contract_number ON contracts(contract_number)'),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_contracts_salesperson ON contracts(salesperson)'),
-    db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_installments_contract_no ON installments(contract_id, installment_no)'),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_installments_received_date ON installments(received_date)'),
+    db.prepare(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_contract_number ON contracts(contract_number)',
+    ),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_contracts_salesperson ON contracts(salesperson)',
+    ),
+    db.prepare(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_installments_contract_no ON installments(contract_id, installment_no)',
+    ),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_installments_received_date ON installments(received_date)',
+    ),
   ]);
   await db.prepare('PRAGMA optimize').run();
   initialized = true;
@@ -83,8 +91,14 @@ export async function listContracts(): Promise<StoredContract[]> {
   await ensureDatabase();
   const db = database();
   const [contractQuery, installmentQuery] = await Promise.all([
-    db.prepare('SELECT * FROM contracts ORDER BY created_at DESC').all<ContractRow>(),
-    db.prepare('SELECT * FROM installments ORDER BY contract_id, installment_no').all<InstallmentRow>(),
+    db
+      .prepare('SELECT * FROM contracts ORDER BY created_at DESC')
+      .all<ContractRow>(),
+    db
+      .prepare(
+        'SELECT * FROM installments ORDER BY contract_id, installment_no',
+      )
+      .all<InstallmentRow>(),
   ]);
   const installmentRows = installmentQuery.results ?? [];
   return (contractQuery.results ?? []).map((row) => ({
@@ -94,24 +108,36 @@ export async function listContracts(): Promise<StoredContract[]> {
     contract_number: String(row.contract_number),
     salesperson: String(row.salesperson),
     business_type: String(row.business_type) as StoredContract['business_type'],
-    customer_source: String(row.customer_source) as StoredContract['customer_source'],
+    customer_source: String(
+      row.customer_source,
+    ) as StoredContract['customer_source'],
     signed_date: String(row.signed_date),
     delivery_requirement: String(row.delivery_requirement),
     annual_contract_amount: Number(row.annual_contract_amount),
-    quoted_amount: row.quoted_amount === null ? null : Number(row.quoted_amount),
-    related_12m_amount: row.related_12m_amount === null ? null : Number(row.related_12m_amount),
-    related_contract_status: String(row.related_contract_status) as StoredContract['related_contract_status'],
+    quoted_amount:
+      row.quoted_amount === null ? null : Number(row.quoted_amount),
+    related_12m_amount:
+      row.related_12m_amount === null ? null : Number(row.related_12m_amount),
+    related_contract_status: String(
+      row.related_contract_status,
+    ) as StoredContract['related_contract_status'],
     has_customization: asBoolean(row.has_customization),
     has_staged_acceptance: asBoolean(row.has_staged_acceptance),
-    commission_mode: String(row.commission_mode) as StoredContract['commission_mode'],
+    commission_mode: String(
+      row.commission_mode,
+    ) as StoredContract['commission_mode'],
     hold_approved: asBoolean(row.hold_approved),
     hold_approval_reference: String(row.hold_approval_reference ?? ''),
     any_prior_commission_paid: asBoolean(row.any_prior_commission_paid),
     sales_share: Number(row.sales_share),
     supervisor_share: Number(row.supervisor_share),
-    team_split_approval_reference: String(row.team_split_approval_reference ?? ''),
+    team_split_approval_reference: String(
+      row.team_split_approval_reference ?? '',
+    ),
     approved_gm_gross_commission:
-      row.approved_gm_gross_commission === null ? null : Number(row.approved_gm_gross_commission),
+      row.approved_gm_gross_commission === null
+        ? null
+        : Number(row.approved_gm_gross_commission),
     gm_approval_reference: String(row.gm_approval_reference ?? ''),
     created_at: String(row.created_at),
     installments: installmentRows
@@ -123,19 +149,31 @@ export async function listContracts(): Promise<StoredContract[]> {
         due_date: String(installment.due_date),
         received_amount: Number(installment.received_amount),
         received_date: String(installment.received_date),
-        implementation_fee_allocated: Number(installment.implementation_fee_allocated),
+        implementation_fee_allocated: Number(
+          installment.implementation_fee_allocated,
+        ),
         business_fee_allocated: Number(installment.business_fee_allocated),
         milestone_complete: asBoolean(installment.milestone_complete),
         cumulative_basis_before:
-          installment.cumulative_basis_before === null ? null : Number(installment.cumulative_basis_before),
+          installment.cumulative_basis_before === null
+            ? null
+            : Number(installment.cumulative_basis_before),
         non_sales_delay: asBoolean(installment.non_sales_delay),
-        non_sales_delay_reason: String(installment.non_sales_delay_reason ?? ''),
-        non_sales_approval_reference: String(installment.non_sales_approval_reference ?? ''),
+        non_sales_delay_reason: String(
+          installment.non_sales_delay_reason ?? '',
+        ),
+        non_sales_approval_reference: String(
+          installment.non_sales_approval_reference ?? '',
+        ),
         early_payment_60_days: asBoolean(installment.early_payment_60_days),
-        early_payment_evidence: String(installment.early_payment_evidence ?? ''),
+        early_payment_evidence: String(
+          installment.early_payment_evidence ?? '',
+        ),
         delivery_ahead_30_days: asBoolean(installment.delivery_ahead_30_days),
         delivery_evidence: String(installment.delivery_evidence ?? ''),
-        discount_approval_reference: String(installment.discount_approval_reference ?? ''),
+        discount_approval_reference: String(
+          installment.discount_approval_reference ?? '',
+        ),
       })),
   }));
 }
@@ -235,10 +273,14 @@ function insertContractStatements(
 export async function updateContract(id: string, input: ContractInput) {
   await ensureDatabase();
   const db = database();
-  const existing = await db.prepare('SELECT id FROM contracts WHERE id = ?').bind(id).first();
+  const existing = await db
+    .prepare('SELECT id FROM contracts WHERE id = ?')
+    .bind(id)
+    .first();
   if (!existing) throw new Error('NOT_FOUND');
   const statements = [
-    db.prepare(`
+    db
+      .prepare(`
       UPDATE contracts SET
         customer_name = ?, contract_name = ?, contract_number = ?, salesperson = ?,
         business_type = ?, customer_source = ?, signed_date = ?, delivery_requirement = ?,
@@ -249,35 +291,37 @@ export async function updateContract(id: string, input: ContractInput) {
         team_split_approval_reference = ?, approved_gm_gross_commission = ?,
         gm_approval_reference = ?
       WHERE id = ?
-    `).bind(
-      input.customer_name,
-      input.contract_name,
-      input.contract_number,
-      input.salesperson,
-      input.business_type,
-      input.customer_source,
-      input.signed_date,
-      input.delivery_requirement,
-      input.annual_contract_amount,
-      input.quoted_amount ?? null,
-      input.related_12m_amount ?? null,
-      input.related_contract_status,
-      Number(input.has_customization),
-      Number(input.has_staged_acceptance),
-      input.commission_mode,
-      Number(input.hold_approved),
-      input.hold_approval_reference || null,
-      Number(input.any_prior_commission_paid),
-      input.sales_share,
-      input.supervisor_share,
-      input.team_split_approval_reference || null,
-      input.approved_gm_gross_commission ?? null,
-      input.gm_approval_reference || null,
-      id,
-    ),
+    `)
+      .bind(
+        input.customer_name,
+        input.contract_name,
+        input.contract_number,
+        input.salesperson,
+        input.business_type,
+        input.customer_source,
+        input.signed_date,
+        input.delivery_requirement,
+        input.annual_contract_amount,
+        input.quoted_amount ?? null,
+        input.related_12m_amount ?? null,
+        input.related_contract_status,
+        Number(input.has_customization),
+        Number(input.has_staged_acceptance),
+        input.commission_mode,
+        Number(input.hold_approved),
+        input.hold_approval_reference || null,
+        Number(input.any_prior_commission_paid),
+        input.sales_share,
+        input.supervisor_share,
+        input.team_split_approval_reference || null,
+        input.approved_gm_gross_commission ?? null,
+        input.gm_approval_reference || null,
+        id,
+      ),
     db.prepare('DELETE FROM installments WHERE contract_id = ?').bind(id),
     ...input.installments.map((installment) =>
-      db.prepare(`
+      db
+        .prepare(`
         INSERT INTO installments (
           id, contract_id, installment_no, planned_amount, due_date, received_amount,
           received_date, implementation_fee_allocated, business_fee_allocated,
@@ -286,37 +330,56 @@ export async function updateContract(id: string, input: ContractInput) {
           early_payment_evidence, delivery_ahead_30_days, delivery_evidence,
           discount_approval_reference
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        crypto.randomUUID(),
-        id,
-        installment.installment_no,
-        installment.planned_amount,
-        installment.due_date,
-        installment.received_amount,
-        installment.received_date,
-        installment.implementation_fee_allocated,
-        installment.business_fee_allocated,
-        Number(installment.milestone_complete),
-        installment.cumulative_basis_before ?? null,
-        Number(installment.non_sales_delay),
-        installment.non_sales_delay_reason || null,
-        installment.non_sales_approval_reference || null,
-        Number(installment.early_payment_60_days),
-        installment.early_payment_evidence || null,
-        Number(installment.delivery_ahead_30_days),
-        installment.delivery_evidence || null,
-        installment.discount_approval_reference || null,
-      ),
+      `)
+        .bind(
+          crypto.randomUUID(),
+          id,
+          installment.installment_no,
+          installment.planned_amount,
+          installment.due_date,
+          installment.received_amount,
+          installment.received_date,
+          installment.implementation_fee_allocated,
+          installment.business_fee_allocated,
+          Number(installment.milestone_complete),
+          installment.cumulative_basis_before ?? null,
+          Number(installment.non_sales_delay),
+          installment.non_sales_delay_reason || null,
+          installment.non_sales_approval_reference || null,
+          Number(installment.early_payment_60_days),
+          installment.early_payment_evidence || null,
+          Number(installment.delivery_ahead_30_days),
+          installment.delivery_evidence || null,
+          installment.discount_approval_reference || null,
+        ),
     ),
   ];
   await db.batch(statements);
 }
 
+export async function deleteContract(id: string) {
+  await ensureDatabase();
+  const db = database();
+  const existing = await db
+    .prepare('SELECT id FROM contracts WHERE id = ?')
+    .bind(id)
+    .first();
+  if (!existing) throw new Error('NOT_FOUND');
+  await db.batch([
+    db.prepare('DELETE FROM installments WHERE contract_id = ?').bind(id),
+    db.prepare('DELETE FROM contracts WHERE id = ?').bind(id),
+  ]);
+}
+
 export async function createContracts(inputs: ContractInput[]) {
   await ensureDatabase();
   const db = database();
-  const query = await db.prepare('SELECT contract_number FROM contracts').all<{ contract_number: string }>();
-  const seen = new Set((query.results ?? []).map((row) => String(row.contract_number)));
+  const query = await db
+    .prepare('SELECT contract_number FROM contracts')
+    .all<{ contract_number: string }>();
+  const seen = new Set(
+    (query.results ?? []).map((row) => String(row.contract_number)),
+  );
   const created: string[] = [];
   const skipped: string[] = [];
   for (const input of inputs) {
@@ -326,7 +389,9 @@ export async function createContracts(inputs: ContractInput[]) {
     }
     const id = crypto.randomUUID();
     try {
-      await db.batch(insertContractStatements(db, input, id, new Date().toISOString()));
+      await db.batch(
+        insertContractStatements(db, input, id, new Date().toISOString()),
+      );
       seen.add(input.contract_number);
       created.push(input.contract_number);
     } catch (error) {
