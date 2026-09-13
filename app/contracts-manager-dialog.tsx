@@ -121,8 +121,8 @@ export function ContractsManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] max-w-[1120px] gap-0 overflow-hidden p-0">
-          <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[1120px] gap-0 overflow-hidden p-0 sm:max-h-[92dvh]">
+          <DialogHeader className="border-b border-border px-4 py-4 pr-14 sm:px-6 sm:py-5">
             <DialogTitle className="flex items-center gap-2 text-xl">
               <Database className="size-5 text-primary" /> 合同数据管理
             </DialogTitle>
@@ -131,7 +131,7 @@ export function ContractsManagerDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="border-b border-border bg-muted/25 px-6 py-4">
+          <div className="border-b border-border bg-muted/25 px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -256,7 +256,7 @@ export function ContractsManagerDialog({
             )}
           </div>
 
-          <DialogFooter className="m-0 px-6 py-4">
+          <DialogFooter className="m-0 px-4 py-4 sm:px-6">
             <Button
               type="button"
               variant="outline"

@@ -104,15 +104,15 @@ export function ImportContractsDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[90vh] max-w-[920px] gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[920px] gap-0 overflow-hidden p-0 sm:max-h-[90dvh]">
+        <DialogHeader className="border-b border-border px-4 py-4 pr-14 sm:px-6 sm:py-5">
           <DialogTitle className="text-xl">导入签单表</DialogTitle>
           <DialogDescription>
             支持 .xlsx。文件只在当前浏览器中解析，确认后仅保存合同与分期字段。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[calc(90vh-150px)] overflow-y-auto px-6 py-5">
+        <div className="max-h-[calc(100dvh-9rem)] overflow-y-auto px-4 py-4 sm:max-h-[calc(90dvh-9rem)] sm:px-6 sm:py-5">
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertCircle />
@@ -194,7 +194,7 @@ export function ImportContractsDialog({
           )}
         </div>
 
-        <DialogFooter className="m-0 px-6 py-4">
+        <DialogFooter className="m-0 px-4 py-4 sm:px-6">
           {completed ? (
             <Button onClick={() => close(false)}>完成</Button>
           ) : (

@@ -100,8 +100,8 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[92vh] max-w-[980px] gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[980px] gap-0 overflow-hidden p-0 sm:max-h-[92dvh]">
+        <DialogHeader className="border-b border-border px-4 py-4 pr-14 sm:px-6 sm:py-5">
           <DialogTitle className="text-xl">{isEditing ? '修正合同与分期回款' : '录入合同与分期回款'}</DialogTitle>
           <DialogDescription>
             金额单位为人民币元。实际到账日期决定计提月份；缺失内容会在计算结果中直接提示补全。
@@ -109,7 +109,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
         </DialogHeader>
 
         <form className="contents" onSubmit={save}>
-          <div className="max-h-[calc(92vh-150px)] overflow-y-auto px-6 py-5">
+          <div className="max-h-[calc(100dvh-9rem)] overflow-y-auto px-4 py-4 sm:max-h-[calc(92dvh-9rem)] sm:px-6 sm:py-5">
             {errors.root?.message && (
               <Alert variant="destructive" className="mb-5">
                 <AlertCircle />
@@ -405,7 +405,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
             </section>
           </div>
 
-          <DialogFooter className="m-0 px-6 py-4">
+          <DialogFooter className="m-0 px-4 py-4 sm:px-6">
             <Button type="button" variant="outline" onClick={() => close(false)}>
               取消
             </Button>
