@@ -196,7 +196,7 @@ function parseContract(rows: SourceRow[]): ParsedContractImport {
   if (source === 'unknown') warnings.push('客户来源不是“自拓、线索或转介绍”，导入后请补充');
   if (!contract.signed_date) warnings.push('缺少签约日期');
   if (!delivery) warnings.push('缺少交付或服务期限要求');
-  if (contract.related_contract_status === 'unknown') warnings.push('缺少 12 个月关联合同检查结果');
+  if (contract.related_contract_status === 'unknown') warnings.push('需确认同客户 / 同项目近 12 个月是否还有其他合同');
   if (type === 'enterprise' && !contract.quoted_amount) warnings.push('项目型合同缺少原始报价');
   contract.installments.forEach((installment, index) => {
     if (installment.received_amount > 0 && !installment.due_date) warnings.push(`第 ${index + 1} 期已到账但缺少合同应收日`);

@@ -50,6 +50,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
     register,
     reset,
     setError,
+    setValue,
     watch,
   } = useForm<ContractInput>({
     resolver: zodResolver(contractSchema),
@@ -59,6 +60,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   const businessType = watch('business_type');
   const commissionMode = watch('commission_mode');
   const installments = watch('installments');
+  const relatedContractStatus = watch('related_contract_status');
   const isEditing = Boolean(initialContract?.id);
   const isSaas = businessType === 'saas_first' ||
     businessType === 'saas_renewal' ||
@@ -67,6 +69,10 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   useEffect(() => {
     if (open) reset(initialContract ?? emptyContract());
   }, [initialContract, open, reset]);
+
+  useEffect(() => {
+    if (relatedContractStatus !== 'checked_grouped') setValue('related_12m_amount', null);
+  }, [relatedContractStatus, setValue]);
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -160,16 +166,25 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                     <Input min="0" step="0.01" type="number" {...register('quoted_amount', nullableNumberOptions)} />
                   </FormField>
                 )}
-                <FormField label="12 个月关联合同检查" error={errors.related_contract_status?.message}>
+                <FormField label="同客户 / 同项目近 12 个月是否还有其他合同？" error={errors.related_contract_status?.message}>
                   <NativeSelect className="w-full" {...register('related_contract_status')}>
-                    <NativeSelectOption value="unknown">尚未检查</NativeSelectOption>
-                    <NativeSelectOption value="checked_none">已检查，无关联</NativeSelectOption>
-                    <NativeSelectOption value="checked_grouped">已检查，已合并判断</NativeSelectOption>
+                    <NativeSelectOption value="unknown">暂不确定</NativeSelectOption>
+                    <NativeSelectOption value="checked_none">没有其他相关合同</NativeSelectOption>
+                    <NativeSelectOption value="checked_grouped">有，按相关合同合计判断</NativeSelectOption>
                   </NativeSelect>
+                  <p className="field-hint">用于防止同一项目拆成多份合同后套用不同档位，不是审批。</p>
                 </FormField>
-                <FormField label="关联金额（含本合同）" error={errors.related_12m_amount?.message}>
-                  <Input min="0" step="0.01" type="number" {...register('related_12m_amount', nullableNumberOptions)} />
-                </FormField>
+                {relatedContractStatus === 'checked_grouped' && (
+                  <FormField label="相关合同合计金额（含本合同）" error={errors.related_12m_amount?.message}>
+                    <Input
+                      min="0"
+                      placeholder="填写近 12 个月合计金额"
+                      step="0.01"
+                      type="number"
+                      {...register('related_12m_amount', nullableNumberOptions)}
+                    />
+                  </FormField>
+                )}
                 <FormField
                   className="sm:col-span-2 lg:col-span-3"
                   label="交付时间要求"

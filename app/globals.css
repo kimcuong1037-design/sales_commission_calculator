@@ -707,6 +707,13 @@ body {
   background: var(--card);
 }
 
+.field-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .check-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
