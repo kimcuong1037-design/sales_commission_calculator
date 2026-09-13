@@ -16,19 +16,19 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.SITE_URL ?? 'https://sales-commission-ledger.ghostagram.chatgpt.site',
   ),
-  title: '佣金台账｜财务结算工作台',
-  description: '按 2026 统一销售提成规则录入合同、核对回款并生成月度结算说明。',
+  title: '佣金台账｜销售提成计算器',
+  description: '导入或录入合同与分期回款，按 2026 统一销售提成规则生成月度计算结果与销售说明。',
   openGraph: {
-    title: '佣金台账｜月度销售提成结算',
-    description: '录入合同与分期回款，按 2026 统一规则生成月度结算结果和销售说明。',
+    title: '佣金台账｜月度销售提成计算器',
+    description: '导入或录入合同与分期回款，按 2026 统一规则生成月度计算结果和销售说明。',
     type: 'website',
     locale: 'zh_CN',
     images: [{ url: '/og.png', width: 1760, height: 910, alt: '佣金台账月度销售提成结算' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '佣金台账｜月度销售提成结算',
-    description: '录入合同与分期回款，按 2026 统一规则生成月度结算结果和销售说明。',
+    title: '佣金台账｜月度销售提成计算器',
+    description: '导入或录入合同与分期回款，按 2026 统一规则生成月度计算结果和销售说明。',
     images: ['/og.png'],
   },
 };

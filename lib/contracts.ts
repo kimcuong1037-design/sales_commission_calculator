@@ -6,7 +6,7 @@ import {
   type CommissionInputRecord,
   type CommissionResult,
   discountDetails,
-} from './commission-engine';
+} from './commission-engine.ts';
 
 const nullableNumber = z.number().min(0).nullable().optional();
 
@@ -15,7 +15,7 @@ export const installmentSchema = z
     id: z.string().optional(),
     installment_no: z.number().int().positive(),
     planned_amount: z.number().min(0),
-    due_date: z.string().min(1, '请填写应收日期'),
+    due_date: z.string(),
     received_amount: z.number().min(0),
     received_date: z.string(),
     implementation_fee_allocated: z.number().min(0),
@@ -47,10 +47,10 @@ export const contractSchema = z.object({
   contract_name: z.string().trim().min(1, '请填写合同名称'),
   contract_number: z.string().trim().min(1, '请填写合同编号'),
   salesperson: z.string().trim().min(1, '请填写签单人或销售人员'),
-  business_type: z.enum(['saas_first', 'saas_renewal', 'saas_private_first', 'enterprise']),
-  customer_source: z.enum(['self', 'lead', 'referral']),
-  signed_date: z.string().min(1, '请填写签约日期'),
-  delivery_requirement: z.string().trim().min(1, '请填写交付时间要求'),
+  business_type: z.enum(['unknown', 'saas_first', 'saas_renewal', 'saas_private_first', 'enterprise']),
+  customer_source: z.enum(['unknown', 'self', 'lead', 'referral']),
+  signed_date: z.string(),
+  delivery_requirement: z.string().trim(),
   annual_contract_amount: z.number().positive('合同金额必须大于 0'),
   quoted_amount: nullableNumber,
   related_12m_amount: nullableNumber,
@@ -291,6 +291,9 @@ function commonRecord(
   contract: StoredContract,
   installment: StoredContract['installments'][number],
 ): CommissionInputRecord {
+  const inputIssues: string[] = [];
+  if (!contract.signed_date) inputIssues.push('请补充签约日期');
+  if (!contract.delivery_requirement) inputIssues.push('请补充交付或服务期限要求');
   return {
     record_id: installment.id,
     business_type: contract.business_type,
@@ -310,17 +313,46 @@ function commonRecord(
     non_sales_delay: installment.non_sales_delay,
     non_sales_delay_reason: installment.non_sales_delay_reason,
     non_sales_approval_reference: installment.non_sales_approval_reference,
+    input_issues: inputIssues,
   };
 }
 
 export const STATUS_LABELS: Record<CommissionResult['status'], string> = {
-  normal: '正常',
-  pending_approval: '待审批',
-  review: '待复核',
+  normal: '可计发',
+  pending_approval: '信息待补全',
+  review: '信息待补全',
   no_commission: '不计提',
-  route_to_enterprise: '转项目型',
-  gm_special: '一事一议',
+  route_to_enterprise: '业务类型需修正',
+  gm_special: '需人工定案',
 };
+
+export const BUSINESS_TYPE_LABELS: Record<ContractInput['business_type'], string> = {
+  unknown: '待判断',
+  saas_first: 'SaaS 首年',
+  saas_renewal: 'SaaS 续费',
+  saas_private_first: '私有云首年',
+  enterprise: '项目型',
+};
+
+export const CUSTOMER_SOURCE_LABELS: Record<ContractInput['customer_source'], string> = {
+  unknown: '待补全',
+  self: '销售自拓',
+  lead: '公司线索',
+  referral: '客户转介绍',
+};
+
+export function humanizeIssue(issue: string) {
+  const exact: Record<string, string> = {
+    'SaaS 业务类型无效：unknown': '请补充业务类型（SaaS 首年、续费、私有云或项目型）',
+    '日期格式无效：due_date': '请补充合同应收日',
+    '日期格式无效：received_date': '请核对实际到账日',
+    '缺少事前统一计提依据': '请补充统一计提的事前合同或书面依据',
+    '未提供有效原始报价': '请补充原始报价，以核对成交折扣',
+  };
+  return (exact[issue] ?? issue)
+    .replaceAll('审批依据', '有效书面依据')
+    .replaceAll('待审批', '信息待补全');
+}
 
 const currency = new Intl.NumberFormat('zh-CN', {
   style: 'currency',
@@ -343,7 +375,7 @@ export function buildSettlementExplanation(
 ) {
   const [year, month] = calculation.settlement_month.split('-');
   const lines = [
-    `${salesperson}，你好。${year} 年 ${Number(month)} 月销售提成正常应发金额为 ${formatCurrency(calculation.summary.normal_sales_payable)}。`,
+    `${salesperson}，你好。${year} 年 ${Number(month)} 月按当前资料计算，可计发销售提成为 ${formatCurrency(calculation.summary.normal_sales_payable)}。`,
   ];
   calculation.results.forEach((result, index) => {
     const prefix = `${index + 1}. ${result.customer_name}《${result.contract_name ?? result.contract_id}》`;
@@ -356,13 +388,13 @@ export function buildSettlementExplanation(
         `${prefix}：计提基数 ${formatCurrency(result.commission_basis)} × ${formatPercent(result.rate)} × 时效系数 ${result.time_coefficient ?? '按各期分别计算'} = ${formatCurrency(result.gross_commission_preview)}。状态：${STATUS_LABELS[result.status]}。`,
       );
     }
-    if (result.issues.length) lines.push(`   说明：${result.issues.join('；')}。`);
+    if (result.issues.length) lines.push(`   待补信息：${result.issues.map(humanizeIssue).join('；')}。`);
   });
-  if (calculation.summary.pending_approval_gross_preview > 0) {
-    lines.push(`待审批预览 ${formatCurrency(calculation.summary.pending_approval_gross_preview)}，未计入正常发放。`);
-  }
-  if (calculation.summary.review_gross_preview > 0) {
-    lines.push(`待复核预览 ${formatCurrency(calculation.summary.review_gross_preview)}，未计入正常发放。`);
+  const incompletePreview = new Decimal(calculation.summary.pending_approval_gross_preview)
+    .plus(calculation.summary.review_gross_preview)
+    .toNumber();
+  if (incompletePreview > 0) {
+    lines.push(`另有 ${formatCurrency(incompletePreview)} 为信息待补全预览；补全后结果可能调整，暂不计入可计发金额。`);
   }
   if (!calculation.results.length) {
     lines.push('该月份暂未找到已到账且满足当前筛选条件的记录。');

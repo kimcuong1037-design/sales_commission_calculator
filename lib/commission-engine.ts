@@ -1,11 +1,13 @@
 import Decimal from 'decimal.js';
 
 export type BusinessType =
+  | 'unknown'
   | 'saas_first'
   | 'saas_renewal'
   | 'saas_private_first'
   | 'enterprise';
-export type CustomerSource = 'self' | 'lead' | 'referral';
+export type CustomerSource = 'unknown' | 'self' | 'lead' | 'referral';
+type KnownCustomerSource = Exclude<CustomerSource, 'unknown'>;
 export type CommissionStatus =
   | 'normal'
   | 'review'
@@ -63,6 +65,7 @@ export interface CommissionInputRecord {
   team_split_approval_reference?: string | null;
   approved_gm_gross_commission?: number | null;
   gm_approval_reference?: string | null;
+  input_issues?: string[];
 }
 
 export interface CommissionResult {
@@ -106,13 +109,13 @@ export interface CommissionCalculation {
 const ZERO = new Decimal(0);
 const ONE = new Decimal(1);
 
-const SOURCE_RATES: Record<CustomerSource, Decimal[]> = {
+const SOURCE_RATES: Record<KnownCustomerSource, Decimal[]> = {
   self: [new Decimal('0.10'), new Decimal('0.12'), new Decimal('0.07'), new Decimal('0.04')],
   lead: [new Decimal('0.08'), new Decimal('0.09'), new Decimal('0.06'), new Decimal('0.035')],
   referral: [new Decimal('0.10'), new Decimal('0.11'), new Decimal('0.07'), new Decimal('0.04')],
 };
 
-const SAAS_RATES: Record<string, Record<CustomerSource, Decimal>> = {
+const SAAS_RATES: Record<string, Record<KnownCustomerSource, Decimal>> = {
   A: { self: new Decimal('0.10'), lead: new Decimal('0.08'), referral: new Decimal('0.10') },
   B: { self: new Decimal('0.12'), lead: new Decimal('0.09'), referral: new Decimal('0.11') },
   C: { self: new Decimal('0.15'), lead: new Decimal('0.10'), referral: new Decimal('0.12') },
@@ -202,7 +205,11 @@ function saasTier(base: Decimal) {
   return null;
 }
 
-function progressive(amount: Decimal, source: CustomerSource) {
+function isKnownCustomerSource(source: CustomerSource): source is KnownCustomerSource {
+  return source === 'self' || source === 'lead' || source === 'referral';
+}
+
+function progressive(amount: Decimal, source: KnownCustomerSource) {
   const [r1, r2, r3, r4] = SOURCE_RATES[source];
   const positive = Decimal.max(amount, ZERO);
   const s1 = Decimal.min(positive, 50_000);
@@ -259,9 +266,10 @@ function classification(record: CommissionInputRecord) {
 
 function calcSaas(record: CommissionInputRecord): Omit<CommissionResult, 'input_index'> {
   const out = baseOutput(record);
-  const issues: string[] = [];
-  const statuses: CommissionStatus[] = [];
+  const issues: string[] = [...(record.input_issues ?? [])];
+  const statuses: CommissionStatus[] = issues.length ? ['review'] : [];
   const source = record.customer_source;
+  if (!isKnownCustomerSource(source)) throw new InputError('请补充客户来源');
   const classificationResult = classification(record);
   issues.push(...classificationResult.issues);
   if (classificationResult.issues.length) statuses.push('review');
@@ -406,9 +414,10 @@ function calcSaas(record: CommissionInputRecord): Omit<CommissionResult, 'input_
 
 function calcEnterprise(record: CommissionInputRecord): Omit<CommissionResult, 'input_index'> {
   const out = baseOutput(record);
-  const issues: string[] = [];
-  const statuses: CommissionStatus[] = [];
+  const issues: string[] = [...(record.input_issues ?? [])];
+  const statuses: CommissionStatus[] = issues.length ? ['review'] : [];
   const source = record.customer_source;
+  if (!isKnownCustomerSource(source)) throw new InputError('请补充客户来源');
   const classificationResult = classification(record);
   issues.push(...classificationResult.issues);
   if (classificationResult.issues.length) statuses.push('review');
@@ -541,7 +550,10 @@ export function calculateCommission(payload: {
       return {
         ...baseOutput(record),
         status: 'review',
-        issues: [error instanceof Error ? error.message : '输入无法计算'],
+        issues: [
+          ...(record.input_issues ?? []),
+          error instanceof Error ? error.message : '输入无法计算',
+        ],
         input_index: index + 1,
       };
     }

@@ -12,11 +12,14 @@ import {
   FilePlus2,
   Landmark,
   LoaderCircle,
+  PencilLine,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ContractDialog } from '@/app/contract-dialog';
+import { ImportContractsDialog } from '@/app/import-contracts-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,21 +37,16 @@ import {
 } from '@/components/ui/native-select';
 import { calculateCommission } from '@/lib/commission-engine';
 import {
+  BUSINESS_TYPE_LABELS,
   STATUS_LABELS,
   buildSettlementExplanation,
   contractsToCommissionRecords,
   createDemoContracts,
   formatCurrency,
   formatPercent,
+  humanizeIssue,
   type StoredContract,
 } from '@/lib/contracts';
-
-const BUSINESS_LABELS: Record<StoredContract['business_type'], string> = {
-  saas_first: 'SaaS 首年',
-  saas_renewal: 'SaaS 续费',
-  saas_private_first: '私有云首年',
-  enterprise: '项目型',
-};
 
 export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) {
   const [contracts, setContracts] = useState<StoredContract[]>([]);
@@ -57,6 +55,8 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
   const [settlementMonth, setSettlementMonth] = useState(defaultMonth);
   const [salesperson, setSalesperson] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [editingContract, setEditingContract] = useState<StoredContract | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedResultId, setSelectedResultId] = useState('');
 
@@ -109,6 +109,13 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
   const selectedResult = calculation.results.find((result) => result.record_id === selectedResultId)
     ?? calculation.results[0]
     ?? null;
+  const editableSelectedContract = useMemo(() => {
+    if (!selectedResult || usingDemo) return null;
+    return contracts.find((contract) =>
+      selectedResult.record_id === `${contract.id}:unified` ||
+      contract.installments.some((installment) => installment.id === selectedResult.record_id),
+    ) ?? null;
+  }, [contracts, selectedResult, usingDemo]);
 
   const copyExplanation = async () => {
     try {
@@ -125,6 +132,21 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
     calculation.summary.counts_by_status.review +
     calculation.summary.counts_by_status.gm_special +
     calculation.summary.counts_by_status.route_to_enterprise;
+  const incompletePreview =
+    calculation.summary.pending_approval_gross_preview + calculation.summary.review_gross_preview;
+  const manualCount =
+    calculation.summary.counts_by_status.gm_special + calculation.summary.counts_by_status.route_to_enterprise;
+
+  const openNewContract = () => {
+    setEditingContract(null);
+    setDialogOpen(true);
+  };
+
+  const openContractForCorrection = () => {
+    if (!editableSelectedContract) return;
+    setEditingContract(editableSelectedContract);
+    setDialogOpen(true);
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -136,14 +158,17 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
             </span>
             <div>
               <p className="text-[15px] font-semibold tracking-[-0.01em]">佣金台账</p>
-              <p className="text-[11px] text-muted-foreground">财务结算工作台</p>
+              <p className="text-[11px] text-muted-foreground">财务计算工作台</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="rule-badge">
               <BadgeCheck className="size-3.5" /> 2026 统一规则 v2.0
             </span>
-            <Button className="hidden h-9 px-3 sm:inline-flex" onClick={() => setDialogOpen(true)}>
+            <Button variant="outline" className="hidden h-9 px-3 sm:inline-flex" onClick={() => setImportOpen(true)}>
+              <Upload data-icon="inline-start" /> 导入 Excel
+            </Button>
+            <Button className="hidden h-9 px-3 sm:inline-flex" onClick={openNewContract}>
               <FilePlus2 data-icon="inline-start" /> 录入新合同
             </Button>
           </div>
@@ -158,10 +183,10 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
               结算月按实际到账日期筛选
             </div>
             <h1 className="font-heading text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">
-              月度销售提成结算
+              月度销售提成计算
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              录入合同与分期回款，按销售人员核算正常应发、待审批和待复核金额。
+              录入或导入合同与分期回款，按销售人员计算可计发金额，并直接提示待补信息。
             </p>
           </div>
 
@@ -207,7 +232,7 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
             <AlertDescription>
               当前展示 3 笔演示记录。保存第一份真实合同后，演示数据会自动退出计算。
             </AlertDescription>
-            <Button size="sm" onClick={() => setDialogOpen(true)}>录入第一份合同</Button>
+            <Button size="sm" onClick={() => setImportOpen(true)}>导入签单表</Button>
           </Alert>
         )}
         {loadError && (
@@ -220,7 +245,7 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
           </Alert>
         )}
 
-        <section className="workspace-grid" aria-label="提成结算工作区">
+        <section className="workspace-grid" aria-label="提成计算工作区">
           <div className="space-y-4">
             <Card className="workspace-card min-w-0 gap-0 py-0">
               <CardHeader className="border-b border-border px-5 py-4 sm:px-6">
@@ -228,9 +253,12 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                 <CardDescription>
                   {activeSalesperson || '暂无销售人员'} · {settlementMonth || '未选择月份'} · {calculation.results.length} 笔触发记录
                 </CardDescription>
-                <CardAction>
-                  <Button variant="outline" className="h-9" onClick={() => setDialogOpen(true)}>
-                    <FilePlus2 data-icon="inline-start" /> 新增记录
+                <CardAction className="flex gap-2">
+                  <Button variant="outline" className="h-9" onClick={() => setImportOpen(true)}>
+                    <Upload data-icon="inline-start" /> 导入 Excel
+                  </Button>
+                  <Button variant="outline" className="h-9" onClick={openNewContract}>
+                    <FilePlus2 data-icon="inline-start" /> 手动录入
                   </Button>
                 </CardAction>
               </CardHeader>
@@ -247,7 +275,7 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                           <th>客户 / 合同</th>
                           <th>计提基数</th>
                           <th>销售应得预览</th>
-                          <th>状态</th>
+                          <th>结果</th>
                           <th aria-label="查看计算详情" />
                         </tr>
                       </thead>
@@ -293,8 +321,8 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                   {issueCount ? <AlertTriangle className="size-4" /> : <BadgeCheck className="size-4" />}
                   <p>
                     {issueCount
-                      ? `发现 ${issueCount} 笔待审批、待复核或需专项处理的记录，均未混入正常发放。`
-                      : '当前记录依据完整，可进入正式发放；主管池另行汇总。'}
+                      ? `有 ${issueCount} 笔记录需要补充信息或人工定案。点击记录可查看原因并修正输入。`
+                      : '当前记录的计算信息完整；主管池金额已单独列示。'}
                   </p>
                 </div>
               </CardContent>
@@ -305,9 +333,14 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                 <CardHeader className="border-b border-border px-5 py-4 sm:px-6">
                   <CardTitle>计算过程</CardTitle>
                   <CardDescription>
-                    {selectedResult.customer_name} · {BUSINESS_LABELS[selectedResult.business_type]}
+                    {selectedResult.customer_name} · {BUSINESS_TYPE_LABELS[selectedResult.business_type]}
                   </CardDescription>
-                  <CardAction>
+                  <CardAction className="flex items-center gap-2">
+                    {editableSelectedContract && (
+                      <Button variant="outline" size="sm" onClick={openContractForCorrection}>
+                        <PencilLine data-icon="inline-start" /> 修正输入
+                      </Button>
+                    )}
                     <span className={`status-pill status-${selectedResult.status}`}>
                       {STATUS_LABELS[selectedResult.status]}
                     </span>
@@ -327,8 +360,8 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                   <Detail label="销售本人预览" value={formatCurrency(selectedResult.sales_payable_preview)} />
                   {selectedResult.issues.length > 0 && (
                     <div className="detail-issues">
-                      <strong>需要处理</strong>
-                      <ul>{selectedResult.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                      <strong>请补充或核对</strong>
+                      <ul>{selectedResult.issues.map((issue) => <li key={issue}>{humanizeIssue(issue)}</li>)}</ul>
                     </div>
                   )}
                 </CardContent>
@@ -342,7 +375,7 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                 <CardDescription className="text-emerald-100">
                   {settlementMonth} · {activeSalesperson || '暂无销售'}
                 </CardDescription>
-                <CardTitle className="text-xl text-white">销售本人正常应发</CardTitle>
+                <CardTitle className="text-xl text-white">销售本人可计发</CardTitle>
               </CardHeader>
               <CardContent className="px-5 py-6">
                 <p className="amount-display">
@@ -351,7 +384,7 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
                 </p>
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   <div className="result-metric">
-                    <span>正常提成总额</span>
+                    <span>规则校验完整的提成总额</span>
                     <strong>{formatCurrency(calculation.summary.normal_gross_commission)}</strong>
                   </div>
                   <div className="result-metric">
@@ -364,12 +397,12 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
 
             <div className="review-grid">
               <div>
-                <span>待审批预览</span>
-                <strong>{formatCurrency(calculation.summary.pending_approval_gross_preview)}</strong>
+                <span>信息待补全预览</span>
+                <strong>{formatCurrency(incompletePreview)}</strong>
               </div>
               <div>
-                <span>待复核预览</span>
-                <strong>{formatCurrency(calculation.summary.review_gross_preview)}</strong>
+                <span>需调整或人工定案</span>
+                <strong>{manualCount} 笔</strong>
               </div>
             </div>
 
@@ -393,9 +426,16 @@ export function CommissionWorkspace({ defaultMonth }: { defaultMonth: string }) 
       </div>
 
       <ContractDialog
+        initialContract={editingContract}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSaved={loadContracts}
+      />
+      <ImportContractsDialog
+        existingContractNumbers={contracts.map((contract) => contract.contract_number)}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={loadContracts}
       />
     </main>
   );

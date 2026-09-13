@@ -10,7 +10,7 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint app db lib tests",
-    "test": "node --experimental-strip-types --test tests/commission-engine.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate"
   },
@@ -33,6 +33,7 @@
     "react-hook-form": "^7.88.0",
     "react-resizable-panels": "4.5.8",
     "react-server-dom-webpack": "19.2.6",
+    "read-excel-file": "^9.3.10",
     "recharts": "3.8.0",
     "shadcn": "4.18.0",
     "tailwind-merge": "3.6.0",

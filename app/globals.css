@@ -473,6 +473,176 @@ body {
   padding-left: 1rem;
 }
 
+.import-dropzone {
+  display: grid;
+  min-height: 10.5rem;
+  cursor: pointer;
+  place-items: center;
+  align-content: center;
+  gap: 0.45rem;
+  border: 1px dashed color-mix(in oklch, var(--primary), transparent 52%);
+  border-radius: 1rem;
+  background: color-mix(in oklch, var(--accent), white 62%);
+  padding: 1.5rem;
+  text-align: center;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.import-dropzone:hover {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--accent), white 48%);
+}
+
+.import-dropzone > svg {
+  height: 1.65rem;
+  width: 1.65rem;
+  color: var(--primary);
+}
+
+.import-dropzone strong {
+  font-size: 0.9rem;
+}
+
+.import-dropzone span {
+  color: var(--muted-foreground);
+  font-size: 0.74rem;
+}
+
+.import-dropzone input {
+  position: absolute;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.import-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  border-radius: 0.85rem;
+  background: var(--muted);
+  padding: 0.85rem;
+}
+
+.import-summary div {
+  border-right: 1px solid var(--border);
+}
+
+.import-summary div:nth-child(3) {
+  border-right: 0;
+}
+
+.import-summary span,
+.import-summary strong {
+  display: block;
+}
+
+.import-summary span {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+}
+
+.import-summary strong {
+  margin-top: 0.18rem;
+  font-size: 0.84rem;
+}
+
+.import-summary p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.71rem;
+  line-height: 1.5;
+}
+
+.import-list {
+  margin-top: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  overflow: hidden;
+}
+
+.import-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(150px, 0.8fr) minmax(220px, 1fr);
+  gap: 0.9rem;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+}
+
+.import-row:last-child {
+  border-bottom: 0;
+}
+
+.import-row strong,
+.import-row span {
+  display: block;
+}
+
+.import-row strong {
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-row span {
+  margin-top: 0.18rem;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.import-status {
+  border-radius: 0.65rem;
+  background: oklch(0.94 0.045 158);
+  padding: 0.55rem 0.65rem;
+  color: oklch(0.36 0.08 162);
+}
+
+.import-status.has-warning {
+  background: oklch(0.96 0.038 86);
+  color: oklch(0.43 0.1 67);
+}
+
+.import-status.is-blocked {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.import-status span {
+  color: inherit;
+  opacity: 0.84;
+}
+
+.import-complete {
+  display: flex;
+  min-height: 15rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  color: var(--primary);
+}
+
+.import-complete > svg {
+  height: 2rem;
+  width: 2rem;
+}
+
+.import-complete strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.import-complete p {
+  margin: 0.2rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
 .demo-alert {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -645,6 +815,10 @@ body {
     grid-column: 2;
     justify-self: start;
   }
+
+  .import-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 460px) {
@@ -662,7 +836,12 @@ body {
 
   .check-grid,
   .detail-grid,
-  .review-grid {
+  .review-grid,
+  .import-summary {
     grid-template-columns: 1fr;
+  }
+
+  .import-summary div {
+    border-right: 0;
   }
 }

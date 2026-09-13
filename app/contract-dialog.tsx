@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, CirclePlus, FileCheck2, Trash2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -23,12 +24,14 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import {
   type ContractInput,
+  type StoredContract,
   contractSchema,
   emptyContract,
   emptyInstallment,
 } from '@/lib/contracts';
 
 interface ContractDialogProps {
+  initialContract?: StoredContract | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void> | void;
@@ -39,7 +42,7 @@ const nullableNumberOptions = {
   setValueAs: (value: string) => (value === '' ? null : Number(value)),
 };
 
-export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogProps) {
+export function ContractDialog({ initialContract, open, onOpenChange, onSaved }: ContractDialogProps) {
   const {
     control,
     formState: { errors, isSubmitting },
@@ -56,6 +59,14 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
   const businessType = watch('business_type');
   const commissionMode = watch('commission_mode');
   const installments = watch('installments');
+  const isEditing = Boolean(initialContract?.id);
+  const isSaas = businessType === 'saas_first' ||
+    businessType === 'saas_renewal' ||
+    businessType === 'saas_private_first';
+
+  useEffect(() => {
+    if (open) reset(initialContract ?? emptyContract());
+  }, [initialContract, open, reset]);
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -65,9 +76,9 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
   const save = handleSubmit(async (values) => {
     try {
       const response = await fetch('/api/contracts', {
-        method: 'POST',
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(isEditing ? { ...values, id: initialContract!.id } : values),
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -85,9 +96,9 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-h-[92vh] max-w-[980px] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-6 py-5 pr-14">
-          <DialogTitle className="text-xl">录入合同与分期回款</DialogTitle>
+          <DialogTitle className="text-xl">{isEditing ? '修正合同与分期回款' : '录入合同与分期回款'}</DialogTitle>
           <DialogDescription>
-            金额单位为人民币元。实际到账日期决定计提月份，缺失依据会自动进入待复核或待审批。
+            金额单位为人民币元。实际到账日期决定计提月份；缺失内容会在计算结果中直接提示补全。
           </DialogDescription>
         </DialogHeader>
 
@@ -123,6 +134,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                 </FormField>
                 <FormField label="业务类型" error={errors.business_type?.message}>
                   <NativeSelect className="w-full" {...register('business_type')}>
+                    <NativeSelectOption value="unknown">待判断</NativeSelectOption>
                     <NativeSelectOption value="saas_first">标准 SaaS 首年</NativeSelectOption>
                     <NativeSelectOption value="saas_renewal">标准 SaaS 续费</NativeSelectOption>
                     <NativeSelectOption value="saas_private_first">私有云 SaaS 首年</NativeSelectOption>
@@ -131,6 +143,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                 </FormField>
                 <FormField label="客户来源" error={errors.customer_source?.message}>
                   <NativeSelect className="w-full" {...register('customer_source')}>
+                    <NativeSelectOption value="unknown">待补全</NativeSelectOption>
                     <NativeSelectOption value="self">销售自拓</NativeSelectOption>
                     <NativeSelectOption value="lead">公司线索</NativeSelectOption>
                     <NativeSelectOption value="referral">客户转介绍</NativeSelectOption>
@@ -186,7 +199,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
               </div>
             </section>
 
-            {businessType !== 'enterprise' && (
+            {isSaas && (
               <section className="form-section" aria-labelledby="commission-mode-title">
                 <div className="form-section-heading">
                   <span>02</span>
@@ -203,8 +216,8 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                     </NativeSelect>
                   </FormField>
                   {commissionMode === 'hold_until_full' && (
-                    <FormField label="事前合同 / 审批依据">
-                      <Input placeholder="审批人、日期与适用范围" {...register('hold_approval_reference')} />
+                    <FormField label="统一计提书面依据">
+                      <Input placeholder="合同条款、确认日期与适用范围" {...register('hold_approval_reference')} />
                     </FormField>
                   )}
                 </div>
@@ -223,7 +236,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                   <span>02</span>
                   <div>
                     <h2 id="enterprise-title">项目型分成与专项方案</h2>
-                    <p>默认销售 90%、主管池 10%；300 万及以上需总经理专项方案。</p>
+                    <p>默认销售 90%、主管池 10%；300 万及以上需填写已确定的专项方案。</p>
                   </div>
                 </div>
                 <div className="form-grid sm:grid-cols-2 lg:grid-cols-4">
@@ -233,14 +246,14 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                   <FormField label="主管池分成">
                     <Input max="1" min="0" step="0.01" type="number" {...register('supervisor_share', numberOptions)} />
                   </FormField>
-                  <FormField className="sm:col-span-2" label="特殊分成审批依据">
+                  <FormField className="sm:col-span-2" label="特殊分成书面依据">
                     <Input placeholder="非 90/10 时必填" {...register('team_split_approval_reference')} />
                   </FormField>
-                  <FormField label="总经理批准提成总额">
+                  <FormField label="专项方案提成总额">
                     <Input min="0" step="0.01" type="number" {...register('approved_gm_gross_commission', nullableNumberOptions)} />
                   </FormField>
-                  <FormField className="sm:col-span-2 lg:col-span-3" label="总经理专项方案依据">
-                    <Input placeholder="审批人、日期与适用合同 / 里程碑" {...register('gm_approval_reference')} />
+                  <FormField className="sm:col-span-2 lg:col-span-3" label="专项方案书面依据">
+                    <Input placeholder="确认人、日期与适用合同 / 里程碑" {...register('gm_approval_reference')} />
                   </FormField>
                 </div>
               </section>
@@ -251,7 +264,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                 <span>{businessType === 'enterprise' ? '03' : '03'}</span>
                 <div>
                   <h2 id="installment-title">分期付款与实际回款</h2>
-                  <p>每一期都保留应收、到账、费用分摊与审批证据。</p>
+                  <p>每一期都保留应收、到账、费用分摊与必要的书面依据。</p>
                 </div>
                 <Button
                   className="ml-auto"
@@ -302,7 +315,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                           <Input type="date" {...register(`installments.${index}.received_date`)} />
                         </FormField>
 
-                        {businessType !== 'enterprise' && businessType !== 'saas_renewal' && (
+                        {(businessType === 'saas_first' || businessType === 'saas_private_first') && (
                           <>
                             <FormField label="本期实施费分摊">
                               <Input min="0" step="0.01" type="number" {...register(`installments.${index}.implementation_fee_allocated`, numberOptions)} />
@@ -324,7 +337,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                                 {...register(`installments.${index}.cumulative_basis_before`, nullableNumberOptions)}
                               />
                             </FormField>
-                            <FormField className="sm:col-span-2 lg:col-span-3" label="折扣审批依据">
+                            <FormField className="sm:col-span-2 lg:col-span-3" label="低折扣书面依据">
                               <Input placeholder="成交折扣低于 80% 时填写" {...register(`installments.${index}.discount_approval_reference`)} />
                             </FormField>
                           </>
@@ -353,7 +366,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
                               <FormField label="非销售责任原因">
                                 <Input {...register(`installments.${index}.non_sales_delay_reason`)} />
                               </FormField>
-                              <FormField label="非销售责任审批依据">
+                              <FormField label="非销售责任书面依据">
                                 <Input {...register(`installments.${index}.non_sales_approval_reference`)} />
                               </FormField>
                             </>
@@ -383,7 +396,7 @@ export function ContractDialog({ open, onOpenChange, onSaved }: ContractDialogPr
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               <FileCheck2 data-icon="inline-start" />
-              {isSubmitting ? '正在保存…' : '保存合同并进入台账'}
+              {isSubmitting ? '正在保存…' : isEditing ? '保存修正' : '保存合同'}
             </Button>
           </DialogFooter>
         </form>
