@@ -47,14 +47,24 @@ export const contractSchema = z.object({
   contract_name: z.string().trim().min(1, '请填写合同名称'),
   contract_number: z.string().trim().min(1, '请填写合同编号'),
   salesperson: z.string().trim().min(1, '请填写签单人或销售人员'),
-  business_type: z.enum(['unknown', 'saas_first', 'saas_renewal', 'saas_private_first', 'enterprise']),
+  business_type: z.enum([
+    'unknown',
+    'saas_first',
+    'saas_renewal',
+    'saas_private_first',
+    'enterprise',
+  ]),
   customer_source: z.enum(['unknown', 'self', 'lead', 'referral']),
   signed_date: z.string(),
   delivery_requirement: z.string().trim(),
   annual_contract_amount: z.number().positive('合同金额必须大于 0'),
   quoted_amount: nullableNumber,
   related_12m_amount: nullableNumber,
-  related_contract_status: z.enum(['checked_none', 'checked_grouped', 'unknown']),
+  related_contract_status: z.enum([
+    'checked_none',
+    'checked_grouped',
+    'unknown',
+  ]),
   has_customization: z.boolean(),
   has_staged_acceptance: z.boolean(),
   commission_mode: z.enum(['per_payment', 'hold_until_full']),
@@ -220,23 +230,38 @@ export function contractsToCommissionRecords(
   salesperson: string,
 ) {
   const records: CommissionInputRecord[] = [];
-  for (const contract of contracts.filter((item) => item.salesperson === salesperson)) {
+  for (const contract of contracts.filter(
+    (item) => item.salesperson === salesperson,
+  )) {
     const sorted = [...contract.installments].sort((a, b) =>
       (a.received_date || '9999').localeCompare(b.received_date || '9999'),
     );
-    if (contract.business_type !== 'enterprise' && contract.commission_mode === 'hold_until_full') {
-      const completed = sorted.length > 0 && sorted.every((item) => item.received_amount > 0 && item.received_date);
+    if (
+      contract.business_type !== 'enterprise' &&
+      contract.commission_mode === 'hold_until_full'
+    ) {
+      const completed =
+        sorted.length > 0 &&
+        sorted.every((item) => item.received_amount > 0 && item.received_date);
       if (!completed) continue;
-      const triggerDate = sorted.map((item) => item.received_date).sort().at(-1)!;
+      const triggerDate = sorted
+        .map((item) => item.received_date)
+        .sort()
+        .at(-1)!;
       if (!triggerDate.startsWith(settlementMonth)) continue;
       records.push({
         ...commonRecord(contract, sorted.at(-1)!),
         record_id: `${contract.id}:unified`,
-        received_amount: sorted.reduce((sum, item) => sum + item.received_amount, 0),
+        received_amount: sorted.reduce(
+          (sum, item) => sum + item.received_amount,
+          0,
+        ),
         installments: sorted.map((item) => ({
           basis: Math.max(
             0,
-            item.received_amount - item.implementation_fee_allocated - item.business_fee_allocated,
+            item.received_amount -
+              item.implementation_fee_allocated -
+              item.business_fee_allocated,
           ),
           due_date: item.due_date,
           received_date: item.received_date,
@@ -252,17 +277,25 @@ export function contractsToCommissionRecords(
       continue;
     }
 
-    const discount = discountDetails(contract.annual_contract_amount, contract.quoted_amount);
+    const discount = discountDetails(
+      contract.annual_contract_amount,
+      contract.quoted_amount,
+    );
     let runningBasis = new Decimal(0);
     for (const installment of sorted) {
       const suppliedBefore = installment.cumulative_basis_before;
-      const cumulativeBefore = suppliedBefore ?? Number(runningBasis.toString());
+      const cumulativeBefore =
+        suppliedBefore ?? Number(runningBasis.toString());
       if (installment.received_amount > 0) {
         runningBasis = new Decimal(cumulativeBefore).plus(
           new Decimal(installment.received_amount).mul(discount.coefficient),
         );
       }
-      if (!installment.received_date.startsWith(settlementMonth) || installment.received_amount <= 0) continue;
+      if (
+        !installment.received_date.startsWith(settlementMonth) ||
+        installment.received_amount <= 0
+      )
+        continue;
       records.push({
         ...commonRecord(contract, installment),
         implementation_fee_allocated: installment.implementation_fee_allocated,
@@ -293,7 +326,8 @@ function commonRecord(
 ): CommissionInputRecord {
   const inputIssues: string[] = [];
   if (!contract.signed_date) inputIssues.push('请补充签约日期');
-  if (!contract.delivery_requirement) inputIssues.push('请补充交付或服务期限要求');
+  if (!contract.delivery_requirement)
+    inputIssues.push('请补充交付或服务期限要求');
   return {
     record_id: installment.id,
     business_type: contract.business_type,
@@ -326,7 +360,10 @@ export const STATUS_LABELS: Record<CommissionResult['status'], string> = {
   gm_special: '需人工定案',
 };
 
-export const BUSINESS_TYPE_LABELS: Record<ContractInput['business_type'], string> = {
+export const BUSINESS_TYPE_LABELS: Record<
+  ContractInput['business_type'],
+  string
+> = {
   unknown: '待判断',
   saas_first: 'SaaS 首年',
   saas_renewal: 'SaaS 续费',
@@ -334,7 +371,10 @@ export const BUSINESS_TYPE_LABELS: Record<ContractInput['business_type'], string
   enterprise: '项目型',
 };
 
-export const CUSTOMER_SOURCE_LABELS: Record<ContractInput['customer_source'], string> = {
+export const CUSTOMER_SOURCE_LABELS: Record<
+  ContractInput['customer_source'],
+  string
+> = {
   unknown: '待补全',
   self: '销售自拓',
   lead: '公司线索',
@@ -343,12 +383,14 @@ export const CUSTOMER_SOURCE_LABELS: Record<ContractInput['customer_source'], st
 
 export function humanizeIssue(issue: string) {
   const exact: Record<string, string> = {
-    'SaaS 业务类型无效：unknown': '请补充业务类型（SaaS 首年、续费、私有云或项目型）',
+    'SaaS 业务类型无效：unknown':
+      '请补充业务类型（SaaS 首年、续费、私有云或项目型）',
     '日期格式无效：due_date': '请补充合同应收日',
     '日期格式无效：received_date': '请核对实际到账日',
-    '缺少事前统一计提依据': '请补充统一计提的事前合同或书面依据',
-    '未提供有效原始报价': '请补充原始报价，以核对成交折扣',
-    '关联合同检查未完成': '请确认该客户或同一项目近 12 个月是否还有其他合同；没有请选择“没有其他相关合同”，有则填写合计金额，以判断是否跨过 30 万或 300 万元门槛',
+    缺少事前统一计提依据: '请补充统一计提的事前合同或书面依据',
+    未提供有效原始报价: '请补充原始报价，以核对成交折扣',
+    关联合同检查未完成:
+      '请确认该客户或同一项目近 12 个月是否还有其他合同；没有请选择“没有其他相关合同”，有则填写合计金额，以判断是否跨过 30 万或 300 万元门槛',
   };
   return (exact[issue] ?? issue)
     .replaceAll('审批依据', '有效书面依据')
@@ -370,35 +412,189 @@ export function formatPercent(value: number | null | undefined) {
   return `${new Decimal(value).mul(100).toDecimalPlaces(2).toString()}%`;
 }
 
+function coefficientIsOne(value: number | null | undefined) {
+  return value === null || value === undefined || new Decimal(value).eq(1);
+}
+
+function coefficientLabel(value: number) {
+  return new Decimal(value).toDecimalPlaces(2).toString();
+}
+
+function timeAdjustmentLine(result: CommissionResult) {
+  const coefficient = result.time_coefficient;
+  if (coefficientIsOne(coefficient)) return null;
+
+  const overdueDays = result.overdue_days;
+  const timing =
+    typeof overdueDays === 'number'
+      ? overdueDays > 0
+        ? `实际到账比合同应收日晚 ${overdueDays} 天`
+        : overdueDays < 0
+          ? `实际到账比合同应收日提前 ${Math.abs(overdueDays)} 天`
+          : '实际到账日与合同应收日相同'
+      : '根据本期实际到账时间';
+
+  if (coefficient === 0) {
+    return `${timing}，已超过规则允许的计提时限，因此本期不计提（时效系数 0）。`;
+  }
+  return `${timing}，按规则以正常提成的 ${formatPercent(coefficient)} 计发（时效系数 ${coefficientLabel(coefficient!)}）。`;
+}
+
+function discountAdjustmentLine(result: CommissionResult) {
+  const coefficient = result.discount_coefficient;
+  if (coefficientIsOne(coefficient)) return null;
+  const discountRate =
+    result.discount_rate === null || result.discount_rate === undefined
+      ? ''
+      : `合同成交价约为原报价的 ${formatPercent(result.discount_rate)}，`;
+  return `${discountRate}本期回款按 ${formatPercent(coefficient)} 折算为计提基数（折扣系数 ${coefficientLabel(coefficient!)}）。`;
+}
+
+function specialAdjustmentLine(result: CommissionResult) {
+  const coefficient = result.special_coefficient;
+  if (coefficientIsOne(coefficient)) return null;
+  const decimal = new Decimal(coefficient!);
+  if (decimal.gt(1)) {
+    const increase = decimal.minus(1).mul(100).toDecimalPlaces(2).toString();
+    return `本期满足“提前回款至少 60 天”或“交付提前至少 30 天”的奖励条件，提成上浮 ${increase}%（特殊系数 ${coefficientLabel(coefficient!)}）。`;
+  }
+  return `本期存在特殊调整，按基础提成的 ${formatPercent(coefficient)} 计算（特殊系数 ${coefficientLabel(coefficient!)}）。`;
+}
+
+function cumulativeSegmentLine(segment: string | null | undefined) {
+  if (!segment) return '项目提成按累计分段方式计算。';
+  const [before, after] = segment.split('->').map(Number);
+  if (!Number.isFinite(before) || !Number.isFinite(after)) {
+    return '项目提成按累计分段方式计算。';
+  }
+  return `项目提成按累计分段方式计算，累计计提基数由 ${formatCurrency(before)} 增至 ${formatCurrency(after)}。`;
+}
+
+function salesShareLine(result: CommissionResult) {
+  const gross = result.gross_commission_preview;
+  const sales = result.sales_payable_preview;
+  const supervisor = result.supervisor_pool_preview;
+  if (
+    gross === undefined ||
+    sales === undefined ||
+    gross <= 0 ||
+    supervisor === undefined
+  )
+    return null;
+  const salesShare = new Decimal(sales).div(gross);
+  const supervisorShare = new Decimal(supervisor).div(gross);
+  if (supervisorShare.eq(0)) return null;
+  return `提成总额按销售本人 ${formatPercent(salesShare.toNumber())}、主管池 ${formatPercent(supervisorShare.toNumber())} 分配。`;
+}
+
+function resultOutcomeLines(result: CommissionResult) {
+  const sales = result.sales_payable_preview;
+  if (result.status === 'normal' && sales !== undefined) {
+    return [`本笔你可获得：${formatCurrency(sales)}（可计发）。`];
+  }
+  if (result.status === 'no_commission') {
+    return ['本笔结果：暂不计提。'];
+  }
+  if (result.status === 'route_to_enterprise') {
+    return ['本笔结果：需要改按项目型规则核算，暂不计入本月发放。'];
+  }
+  if (result.status === 'gm_special') {
+    return ['本笔结果：需要确定专项提成方案，暂不计入本月发放。'];
+  }
+  const estimate =
+    sales === undefined
+      ? ''
+      : `，按现有资料暂估销售提成为 ${formatCurrency(sales)}`;
+  return [`本笔结果：还需补充或确认资料${estimate}，暂不计入本月发放。`];
+}
+
 export function buildSettlementExplanation(
   calculation: CommissionCalculation,
   salesperson: string,
 ) {
   const [year, month] = calculation.settlement_month.split('-');
   const lines = [
-    `${salesperson}，你好。${year} 年 ${Number(month)} 月按当前资料计算，可计发销售提成为 ${formatCurrency(calculation.summary.normal_sales_payable)}。`,
+    `${salesperson}，你好：`,
+    '',
+    `你在 ${year} 年 ${Number(month)} 月可计发的销售提成为 ${formatCurrency(calculation.summary.normal_sales_payable)}。明细如下：`,
   ];
   calculation.results.forEach((result, index) => {
-    const prefix = `${index + 1}. ${result.customer_name}《${result.contract_name ?? result.contract_id}》`;
-    if (result.business_type === 'enterprise') {
+    lines.push(
+      '',
+      `${index + 1}. ${result.customer_name}｜《${result.contract_name ?? result.contract_id}》（合同编号：${result.contract_id}）`,
+    );
+
+    const basis = result.commission_basis;
+    const gross = result.gross_commission_preview;
+    if (result.tier_or_segment === 'GM-approved' && gross !== undefined) {
       lines.push(
-        `${prefix}：本期折算计提基数 ${formatCurrency(result.commission_basis)}，按累计分段差额法（${result.tier_or_segment ?? '—'}）计算，时效系数 ${result.time_coefficient ?? '—'}，特殊系数 ${result.special_coefficient ?? '—'}，提成总额预览 ${formatCurrency(result.gross_commission_preview)}，销售本人 ${formatCurrency(result.sales_payable_preview)}。状态：${STATUS_LABELS[result.status]}。`,
+        `   本合同按已确认的专项方案计算，提成总额为 ${formatCurrency(gross)}。`,
       );
-    } else {
+    } else if (result.business_type === 'enterprise') {
+      if (basis !== undefined && basis !== null) {
+        lines.push(`   本月折算后的计提基数：${formatCurrency(basis)}。`);
+      }
+      lines.push(`   ${cumulativeSegmentLine(result.tier_or_segment)}`);
+      const discountLine = discountAdjustmentLine(result);
+      if (discountLine) lines.push(`   ${discountLine}`);
+      const timeLine = timeAdjustmentLine(result);
+      if (timeLine) lines.push(`   ${timeLine}`);
+      const specialLine = specialAdjustmentLine(result);
+      if (specialLine) lines.push(`   ${specialLine}`);
+      if (gross !== undefined)
+        lines.push(`   本期提成总额：${formatCurrency(gross)}。`);
+      const shareLine = salesShareLine(result);
+      if (shareLine) lines.push(`   ${shareLine}`);
+    } else if (basis !== undefined && basis !== null && gross !== undefined) {
+      lines.push(`   本月可计提基数：${formatCurrency(basis)}。`);
+      const timeLine = timeAdjustmentLine(result);
+      if (timeLine) lines.push(`   ${timeLine}`);
+      if (
+        result.time_coefficient === null ||
+        result.time_coefficient === undefined
+      ) {
+        lines.push(
+          `   适用提成比例为 ${formatPercent(result.rate)}；各期按各自到账时效分别计算后，本合同提成合计为 ${formatCurrency(gross)}。`,
+        );
+      } else {
+        const timingPart = coefficientIsOne(result.time_coefficient)
+          ? ''
+          : ` × ${formatPercent(result.time_coefficient)}`;
+        lines.push(
+          `   计算方式：${formatCurrency(basis)} × ${formatPercent(result.rate)}${timingPart} = ${formatCurrency(gross)}。`,
+        );
+      }
+    }
+
+    lines.push(...resultOutcomeLines(result).map((line) => `   ${line}`));
+    if (result.status !== 'normal' && result.issues.length) {
       lines.push(
-        `${prefix}：计提基数 ${formatCurrency(result.commission_basis)} × ${formatPercent(result.rate)} × 时效系数 ${result.time_coefficient ?? '按各期分别计算'} = ${formatCurrency(result.gross_commission_preview)}。状态：${STATUS_LABELS[result.status]}。`,
+        `   还需确认：${result.issues.map(humanizeIssue).join('；')}。`,
       );
     }
-    if (result.issues.length) lines.push(`   待补信息：${result.issues.map(humanizeIssue).join('；')}。`);
   });
-  const incompletePreview = new Decimal(calculation.summary.pending_approval_gross_preview)
-    .plus(calculation.summary.review_gross_preview)
+  const incompleteSalesPreview = calculation.results
+    .filter(
+      (result) =>
+        result.status === 'pending_approval' || result.status === 'review',
+    )
+    .reduce(
+      (sum, result) => sum.plus(result.sales_payable_preview ?? 0),
+      new Decimal(0),
+    )
     .toNumber();
-  if (incompletePreview > 0) {
-    lines.push(`另有 ${formatCurrency(incompletePreview)} 为信息待补全预览；补全后结果可能调整，暂不计入可计发金额。`);
+  if (incompleteSalesPreview > 0) {
+    lines.push(
+      '',
+      `另有 ${formatCurrency(incompleteSalesPreview)} 的销售提成仍需补充或确认资料，暂未计入本月可计发金额。`,
+    );
   }
   if (!calculation.results.length) {
-    lines.push('该月份暂未找到已到账且满足当前筛选条件的记录。');
+    lines.push('', '该月份暂未找到已到账且满足当前筛选条件的记录。');
   }
+  lines.push(
+    '',
+    '以上金额根据当前已录入的合同和回款资料计算；如资料有调整，最终结果也会相应更新。',
+  );
   return lines.join('\n');
 }
