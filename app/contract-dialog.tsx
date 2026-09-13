@@ -172,7 +172,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                     <NativeSelectOption value="checked_none">没有其他相关合同</NativeSelectOption>
                     <NativeSelectOption value="checked_grouped">有，按相关合同合计判断</NativeSelectOption>
                   </NativeSelect>
-                  <p className="field-hint">用于防止同一项目拆成多份合同后套用不同档位，不是审批。</p>
+                  <p className="field-hint">用于防止拆单后绕开 30 万项目型或 300 万专项处理门槛，不是审批。</p>
                 </FormField>
                 {relatedContractStatus === 'checked_grouped' && (
                   <FormField label="相关合同合计金额（含本合同）" error={errors.related_12m_amount?.message}>
