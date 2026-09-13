@@ -340,22 +340,3 @@ export async function createContracts(inputs: ContractInput[]) {
   }
   return { created, skipped };
 }
-
-export async function clearAllContracts() {
-  await ensureDatabase();
-  const db = database();
-  const [contractCount, installmentCount] = await Promise.all([
-    db.prepare('SELECT COUNT(*) AS count FROM contracts').first<{ count: number }>(),
-    db.prepare('SELECT COUNT(*) AS count FROM installments').first<{ count: number }>(),
-  ]);
-
-  await db.batch([
-    db.prepare('DELETE FROM installments'),
-    db.prepare('DELETE FROM contracts'),
-  ]);
-
-  return {
-    contracts: Number(contractCount?.count ?? 0),
-    installments: Number(installmentCount?.count ?? 0),
-  };
-}
