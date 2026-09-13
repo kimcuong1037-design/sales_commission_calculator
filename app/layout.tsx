@@ -13,7 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_URL ?? 'http://localhost:3000'),
+  metadataBase: new URL(
+    process.env.SITE_URL ?? 'https://sales-commission-ledger.ghostagram.chatgpt.site',
+  ),
   title: '佣金台账｜财务结算工作台',
   description: '按 2026 统一销售提成规则录入合同、核对回款并生成月度结算说明。',
   openGraph: {
