@@ -2,6 +2,8 @@
 
 import {
   AlertTriangle,
+  CircleCheckBig,
+  Clock3,
   Database,
   LoaderCircle,
   PencilLine,
@@ -42,12 +44,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  formatAccruedAt,
+  type CommissionAccrual,
+} from '@/lib/commission-accruals';
+import {
   BUSINESS_TYPE_LABELS,
   formatCurrency,
   type StoredContract,
 } from '@/lib/contracts';
 
 interface ContractsManagerDialogProps {
+  accruals: CommissionAccrual[];
   contracts: StoredContract[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,6 +63,7 @@ interface ContractsManagerDialogProps {
 }
 
 export function ContractsManagerDialog({
+  accruals,
   contracts,
   open,
   onOpenChange,
@@ -79,6 +87,20 @@ export function ContractsManagerDialog({
           normalizedQuery,
     );
   }, [contracts, normalizedQuery]);
+  const accrualsByContract = useMemo(() => {
+    const grouped = new Map<string, CommissionAccrual[]>();
+    for (const accrual of accruals) {
+      const contractAccruals = grouped.get(accrual.contract_id) ?? [];
+      contractAccruals.push(accrual);
+      grouped.set(accrual.contract_id, contractAccruals);
+    }
+    for (const contractAccruals of grouped.values()) {
+      contractAccruals.sort((left, right) =>
+        right.accrued_at.localeCompare(left.accrued_at),
+      );
+    }
+    return grouped;
+  }, [accruals]);
 
   const setOpen = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -127,7 +149,7 @@ export function ContractsManagerDialog({
               <Database className="size-5 text-primary" /> 合同数据管理
             </DialogTitle>
             <DialogDescription>
-              查看全部已保存合同。编辑和删除不受当前计提月份或销售人员筛选影响。
+              查看全部已保存合同及佣金计提情况。编辑和删除不受当前计提月份或销售人员筛选影响。
             </DialogDescription>
           </DialogHeader>
 
@@ -172,7 +194,7 @@ export function ContractsManagerDialog({
             )}
 
             {visibleContracts.length ? (
-              <Table>
+              <Table className="min-w-[1120px]">
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>
                     <TableHead className="pl-6">客户 / 合同</TableHead>
@@ -180,61 +202,86 @@ export function ContractsManagerDialog({
                     <TableHead>业务类型</TableHead>
                     <TableHead className="text-right">合同金额</TableHead>
                     <TableHead className="text-center">分期</TableHead>
+                    <TableHead>财务计提</TableHead>
                     <TableHead className="pr-6 text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleContracts.map((contract) => (
-                    <TableRow key={contract.id}>
-                      <TableCell className="max-w-[360px] pl-6 whitespace-normal">
-                        <strong className="block font-semibold">
-                          {contract.customer_name}
-                        </strong>
-                        <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                          {contract.contract_name} · {contract.contract_number}
-                        </span>
-                      </TableCell>
-                      <TableCell>{contract.salesperson}</TableCell>
-                      <TableCell>
-                        {BUSINESS_TYPE_LABELS[contract.business_type]}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatCurrency(contract.annual_contract_amount)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {contract.installments.length} 期
-                      </TableCell>
-                      <TableCell className="pr-6">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                            onClick={() => editContract(contract)}
-                          >
-                            <PencilLine data-icon="inline-start" /> 编辑
-                          </Button>
-                          <Button
-                            disabled={deletingId === contract.id}
-                            size="sm"
-                            type="button"
-                            variant="destructive"
-                            onClick={() => setContractToDelete(contract)}
-                          >
-                            {deletingId === contract.id ? (
-                              <LoaderCircle
-                                className="animate-spin"
-                                data-icon="inline-start"
-                              />
-                            ) : (
-                              <Trash2 data-icon="inline-start" />
-                            )}
-                            删除
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {visibleContracts.map((contract) => {
+                    const contractAccruals =
+                      accrualsByContract.get(contract.id) ?? [];
+                    const latestAccrual = contractAccruals[0];
+
+                    return (
+                      <TableRow key={contract.id}>
+                        <TableCell className="max-w-[360px] pl-6 whitespace-normal">
+                          <strong className="block font-semibold">
+                            {contract.customer_name}
+                          </strong>
+                          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                            {contract.contract_name} ·{' '}
+                            {contract.contract_number}
+                          </span>
+                        </TableCell>
+                        <TableCell>{contract.salesperson}</TableCell>
+                        <TableCell>
+                          {BUSINESS_TYPE_LABELS[contract.business_type]}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {formatCurrency(contract.annual_contract_amount)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {contract.installments.length} 期
+                        </TableCell>
+                        <TableCell className="min-w-[180px]">
+                          {latestAccrual ? (
+                            <div className="accrual-state">
+                              <span className="accrual-pill is-accrued">
+                                <CircleCheckBig /> 已计提{' '}
+                                {contractAccruals.length} 笔
+                              </span>
+                              <small>
+                                最近 {formatAccruedAt(latestAccrual.accrued_at)}
+                              </small>
+                            </div>
+                          ) : (
+                            <span className="accrual-pill">
+                              <Clock3 /> 尚未计提
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="pr-6">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={() => editContract(contract)}
+                            >
+                              <PencilLine data-icon="inline-start" /> 编辑
+                            </Button>
+                            <Button
+                              disabled={deletingId === contract.id}
+                              size="sm"
+                              type="button"
+                              variant="destructive"
+                              onClick={() => setContractToDelete(contract)}
+                            >
+                              {deletingId === contract.id ? (
+                                <LoaderCircle
+                                  className="animate-spin"
+                                  data-icon="inline-start"
+                                />
+                              ) : (
+                                <Trash2 data-icon="inline-start" />
+                              )}
+                              删除
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             ) : (

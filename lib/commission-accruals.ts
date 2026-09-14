@@ -19,6 +19,22 @@ export interface CommissionAccrual extends CommissionAccrualInput {
   accrued_at: string;
 }
 
+const accruedDateTime = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+export function formatAccruedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '时间待核对'
+    : accruedDateTime.format(date);
+}
+
 export function installmentCommissionRecordId(
   contractId: string,
   installmentNo: number,

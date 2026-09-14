@@ -51,6 +51,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import {
+  formatAccruedAt,
   installmentCommissionRecordId,
   unifiedCommissionRecordId,
   type CommissionAccrual,
@@ -761,6 +762,7 @@ export function CommissionWorkspace({
         onSaved={loadContracts}
       />
       <ContractsManagerDialog
+        accruals={accruals}
         contracts={contracts}
         open={managerOpen}
         onOpenChange={setManagerOpen}
@@ -837,22 +839,6 @@ function commissionBelongsToContract(
         installmentCommissionRecordId(contract.id, installment.installment_no),
     )
   );
-}
-
-const accruedDateTime = new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-function formatAccruedAt(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? '时间待核对'
-    : accruedDateTime.format(date);
 }
 
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {
