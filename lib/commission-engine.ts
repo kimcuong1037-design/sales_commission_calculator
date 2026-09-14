@@ -157,11 +157,23 @@ function boolValue(record: CommissionInputRecord, field: keyof CommissionInputRe
 }
 
 function parseDate(value: unknown, field: string) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+  if (typeof value !== 'string') {
     throw new InputError(`日期格式无效：${field}`);
   }
-  const timestamp = Date.parse(`${value}T00:00:00Z`);
-  if (Number.isNaN(timestamp)) throw new InputError(`日期格式无效：${field}`);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new InputError(`日期格式无效：${field}`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const date = new Date(timestamp);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new InputError(`日期格式无效：${field}`);
+  }
   return timestamp;
 }
 
@@ -257,10 +269,13 @@ function classification(record: CommissionInputRecord) {
   const annual = requiredDec(record.annual_contract_amount, 'annual_contract_amount');
   const related = dec(record.related_12m_amount, 'related_12m_amount', false);
   const amount = Decimal.max(annual, related ?? ZERO);
-  const issues = record.related_contract_status === 'checked_none' ||
-    record.related_contract_status === 'checked_grouped'
-    ? []
-    : ['关联合同检查未完成'];
+  const issues: string[] = [];
+  if (record.related_contract_status === 'unknown') {
+    issues.push('关联合同检查未完成');
+  } else if (record.related_contract_status === 'checked_grouped') {
+    if (related === null) issues.push('关联合同合计金额缺失');
+    else if (related.lt(annual)) issues.push('关联合同合计金额小于本合同金额');
+  }
   return { amount, issues };
 }
 

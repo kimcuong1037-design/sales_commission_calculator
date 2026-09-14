@@ -22,7 +22,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
-import { getApiErrorMessage } from '@/lib/api-response';
+import { readApiResponse } from '@/lib/api-response';
 import {
   type ContractInput,
   type StoredContract,
@@ -63,8 +63,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   const installments = watch('installments');
   const relatedContractStatus = watch('related_contract_status');
   const isEditing = Boolean(initialContract?.id);
-  const isSaas = businessType === 'saas_first' ||
-    businessType === 'saas_renewal' ||
+  const supportsUnifiedCommission = businessType === 'saas_first' ||
     businessType === 'saas_private_first';
 
   useEffect(() => {
@@ -74,6 +73,12 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   useEffect(() => {
     if (relatedContractStatus !== 'checked_grouped') setValue('related_12m_amount', null);
   }, [relatedContractStatus, setValue]);
+
+  useEffect(() => {
+    if (!supportsUnifiedCommission && commissionMode !== 'per_payment') {
+      setValue('commission_mode', 'per_payment');
+    }
+  }, [commissionMode, setValue, supportsUnifiedCommission]);
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -87,16 +92,16 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(isEditing ? { ...values, id: initialContract!.id } : values),
       });
-      if (!response.ok) {
-        setError('root', {
-          message: await getApiErrorMessage(response, '合同保存失败'),
-        });
-        return;
-      }
+      await readApiResponse<{ id: string }>(response, '合同保存失败');
       await onSaved();
       close(false);
-    } catch {
-      setError('root', { message: '暂时无法连接台账，请稍后重试' });
+    } catch (error) {
+      setError('root', {
+        message:
+          error instanceof Error
+            ? error.message
+            : '暂时无法连接台账，请稍后重试',
+      });
     }
   });
 
@@ -216,7 +221,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
               </div>
             </section>
 
-            {isSaas && (
+            {supportsUnifiedCommission && (
               <section className="form-section" aria-labelledby="commission-mode-title">
                 <div className="form-section-heading">
                   <span>02</span>

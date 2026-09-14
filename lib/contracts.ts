@@ -14,14 +14,32 @@ import {
 
 const nullableNumber = z.number().min(0).nullable().optional();
 
+export function isStrictIsoDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+const optionalIsoDate = z
+  .string()
+  .refine((value) => value === '' || isStrictIsoDate(value), '日期格式不正确');
+
 export const installmentSchema = z
   .object({
     id: z.string().optional(),
     installment_no: z.number().int().positive(),
     planned_amount: z.number().min(0),
-    due_date: z.string(),
+    due_date: optionalIsoDate,
     received_amount: z.number().min(0),
-    received_date: z.string(),
+    received_date: optionalIsoDate,
     implementation_fee_allocated: z.number().min(0),
     business_fee_allocated: z.number().min(0),
     milestone_complete: z.boolean(),
@@ -59,7 +77,7 @@ export const contractSchema = z.object({
     'enterprise',
   ]),
   customer_source: z.enum(['unknown', 'self', 'lead', 'referral']),
-  signed_date: z.string(),
+  signed_date: optionalIsoDate,
   delivery_requirement: z.string().trim(),
   annual_contract_amount: z.number().positive('合同金额必须大于 0'),
   quoted_amount: nullableNumber,
@@ -81,6 +99,49 @@ export const contractSchema = z.object({
   approved_gm_gross_commission: nullableNumber,
   gm_approval_reference: z.string().optional(),
   installments: z.array(installmentSchema).min(1, '至少录入一期付款计划'),
+}).superRefine((value, context) => {
+  if (value.related_contract_status === 'checked_grouped') {
+    if (
+      value.related_12m_amount === null ||
+      value.related_12m_amount === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['related_12m_amount'],
+        message: '请填写相关合同合计金额',
+      });
+    } else if (value.related_12m_amount < value.annual_contract_amount) {
+      context.addIssue({
+        code: 'custom',
+        path: ['related_12m_amount'],
+        message: '相关合同合计金额不能小于本合同金额',
+      });
+    }
+  }
+
+  if (
+    value.commission_mode === 'hold_until_full' &&
+    value.business_type !== 'saas_first' &&
+    value.business_type !== 'saas_private_first'
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['commission_mode'],
+      message: '统一计提仅适用于 SaaS 首年或私有云首年',
+    });
+  }
+
+  const installmentNumbers = new Set<number>();
+  for (const [index, installment] of value.installments.entries()) {
+    if (installmentNumbers.has(installment.installment_no)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['installments', index, 'installment_no'],
+        message: `第 ${installment.installment_no} 期重复，请核对分期顺序`,
+      });
+    }
+    installmentNumbers.add(installment.installment_no);
+  }
 });
 
 export type ContractInput = z.infer<typeof contractSchema>;

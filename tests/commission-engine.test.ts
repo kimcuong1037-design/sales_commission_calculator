@@ -162,3 +162,22 @@ void test('keeps review and approval previews out of normal payable', () => {
   assert.equal(result.summary.normal_sales_payable, 0);
   assert.equal(result.summary.review_gross_preview, 9_600);
 });
+
+void test('requires a verified total when related contracts are grouped', () => {
+  const result = calculateCommission({
+    settlement_month: '2026-09',
+    records: [
+      common({
+        record_id: 'GROUPED-MISSING-TOTAL',
+        implementation_fee_allocated: 0,
+        business_fee_allocated: 0,
+        related_contract_status: 'checked_grouped',
+        related_12m_amount: null,
+      }),
+    ],
+  });
+
+  assert.equal(result.results[0].status, 'review');
+  assert.equal(result.summary.normal_sales_payable, 0);
+  assert.match(result.results[0].issues.join('；'), /关联合同合计金额缺失/);
+});

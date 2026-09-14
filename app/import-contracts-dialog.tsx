@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { readApiResponse } from '@/lib/api-response';
 import {
   importSummaryLabel,
   parseSalesWorkbook,
@@ -91,8 +92,10 @@ export function ImportContractsDialog({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ contracts: readyItems.map((item) => item.contract) }),
       });
-      const body = (await response.json()) as { created?: string[]; skipped?: string[]; error?: string };
-      if (!response.ok) throw new Error(body.error ?? '批量导入失败');
+      const body = await readApiResponse<{ created?: string[]; skipped?: string[] }>(
+        response,
+        '批量导入失败，请稍后重试',
+      );
       setCompleted({ created: body.created ?? [], skipped: body.skipped ?? [] });
       await onImported();
     } catch (caught) {

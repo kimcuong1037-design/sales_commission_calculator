@@ -3,11 +3,18 @@ import {
   handleDeleteContract,
   handleUpdateContract,
 } from '@/app/api/contracts/handlers';
+import {
+  apiRequestErrorResponse,
+  readJsonRequest,
+} from '@/lib/api-request';
 import { contractSchema } from '@/lib/contracts';
+import { requireAuthenticatedSiteUser } from '@/lib/site-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requireAuthenticatedSiteUser(request);
+  if (unauthorized) return unauthorized;
   try {
     return Response.json({ contracts: await listContracts() });
   } catch (error) {
@@ -17,8 +24,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = requireAuthenticatedSiteUser(request);
+  if (unauthorized) return unauthorized;
   try {
-    const parsed = contractSchema.safeParse(await request.json());
+    const parsed = contractSchema.safeParse(await readJsonRequest(request));
     if (!parsed.success) {
       return Response.json(
         { error: parsed.error.issues[0]?.message ?? '合同信息不完整' },
@@ -29,6 +38,8 @@ export async function POST(request: Request) {
     return Response.json({ id }, { status: 201 });
   } catch (error) {
     console.error('Failed to create contract', error);
+    const requestError = apiRequestErrorResponse(error);
+    if (requestError) return requestError;
     const message =
       error instanceof Error && error.message.includes('UNIQUE')
         ? '合同编号已存在，请核对后重试'

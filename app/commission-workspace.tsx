@@ -50,6 +50,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
+import { readApiResponse } from '@/lib/api-response';
 import {
   formatAccruedAt,
   installmentCommissionRecordId,
@@ -106,19 +107,16 @@ export function CommissionWorkspace({
         fetch('/api/contracts', { cache: 'no-store' }),
         fetch('/api/commissions/accruals', { cache: 'no-store' }),
       ]);
-      const [contractsBody, accrualsBody] = (await Promise.all([
-        contractsResponse.json(),
-        accrualsResponse.json(),
-      ])) as [
-        { contracts?: StoredContract[]; error?: string },
-        { accruals?: CommissionAccrual[]; error?: string },
-      ];
-      if (!contractsResponse.ok) {
-        throw new Error(contractsBody.error ?? '暂时无法读取合同台账');
-      }
-      if (!accrualsResponse.ok) {
-        throw new Error(accrualsBody.error ?? '暂时无法读取财务计提状态');
-      }
+      const [contractsBody, accrualsBody] = await Promise.all([
+        readApiResponse<{ contracts?: StoredContract[] }>(
+          contractsResponse,
+          '暂时无法读取合同台账',
+        ),
+        readApiResponse<{ accruals?: CommissionAccrual[] }>(
+          accrualsResponse,
+          '暂时无法读取财务计提状态',
+        ),
+      ]);
       setContracts(contractsBody.contracts ?? []);
       setAccruals(accrualsBody.accruals ?? []);
     } catch (error) {
@@ -135,10 +133,10 @@ export function CommissionWorkspace({
     return () => window.clearTimeout(timeout);
   }, [loadContracts]);
 
-  const usingDemo = !isLoading && contracts.length === 0;
+  const usingDemo = !isLoading && !loadError && contracts.length === 0;
   const effectiveContracts = useMemo(
-    () => (contracts.length ? contracts : createDemoContracts(defaultMonth)),
-    [contracts, defaultMonth],
+    () => (usingDemo ? createDemoContracts(defaultMonth) : contracts),
+    [contracts, defaultMonth, usingDemo],
   );
   const salespeople = useMemo(
     () =>
@@ -180,17 +178,23 @@ export function CommissionWorkspace({
     () => new Map(accruals.map((accrual) => [accrual.record_id, accrual])),
     [accruals],
   );
+  const accruedContractIds = useMemo(
+    () => new Set(accruals.map((accrual) => accrual.contract_id)),
+    [accruals],
+  );
   const selectedAccrual = selectedResult
     ? accrualByRecordId.get(selectedResult.record_id)
     : undefined;
   const editableSelectedContract = useMemo(() => {
     if (!selectedResult || usingDemo) return null;
     return (
-      contracts.find((contract) =>
-        commissionBelongsToContract(selectedResult.record_id, contract),
+      contracts.find(
+        (contract) =>
+          !accruedContractIds.has(contract.id) &&
+          commissionBelongsToContract(selectedResult.record_id, contract),
       ) ?? null
     );
-  }, [contracts, selectedResult, usingDemo]);
+  }, [accruedContractIds, contracts, selectedResult, usingDemo]);
 
   const requestAccrual = (result: CommissionResult) => {
     setSelectedResultId(result.record_id);
@@ -217,17 +221,13 @@ export function CommissionWorkspace({
           record_id: pendingAccrual.record_id,
           contract_id: contract.id,
           settlement_month: settlementMonth,
-          salesperson: pendingAccrual.salesperson,
-          commission_amount: pendingAccrual.gross_commission_preview ?? 0,
         }),
       });
-      const body = (await response.json()) as {
-        accrual?: CommissionAccrual;
-        error?: string;
-      };
-      if (!response.ok || !body.accrual) {
-        throw new Error(body.error ?? '计提状态保存失败');
-      }
+      const body = await readApiResponse<{ accrual?: CommissionAccrual }>(
+        response,
+        '计提状态保存失败',
+      );
+      if (!body.accrual) throw new Error('计提状态保存失败');
       setAccruals((current) => [
         body.accrual!,
         ...current.filter((item) => item.record_id !== body.accrual!.record_id),

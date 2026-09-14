@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getApiErrorMessage, readApiJson } from '../lib/api-response.ts';
+import { readApiResponse } from '../lib/api-response.ts';
 
 void test('uses a structured API error when one is returned', async () => {
   const response = Response.json(
@@ -30,4 +31,11 @@ void test('explains an access-layer HTML response instead of reporting a ledger 
 void test('returns null for a non-JSON response', async () => {
   const response = new Response('<!doctype html>');
   assert.equal(await readApiJson(response), null);
+});
+
+void test('rejects a successful response that is not JSON', async () => {
+  await assert.rejects(
+    readApiResponse(new Response('<!doctype html>'), '返回格式异常'),
+    /返回格式异常/,
+  );
 });

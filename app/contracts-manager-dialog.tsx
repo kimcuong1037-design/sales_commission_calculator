@@ -43,7 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getApiErrorMessage } from '@/lib/api-response';
+import { readApiResponse } from '@/lib/api-response';
 import {
   formatAccruedAt,
   type CommissionAccrual,
@@ -127,11 +127,10 @@ export function ContractsManagerDialog({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: contractToDelete.id }),
       });
-      if (!response.ok) {
-        throw new Error(
-          await getApiErrorMessage(response, '合同删除失败，请稍后重试'),
-        );
-      }
+      await readApiResponse<{ id: string }>(
+        response,
+        '合同删除失败，请稍后重试',
+      );
       setContractToDelete(null);
       await onChanged();
     } catch (error) {
@@ -153,7 +152,7 @@ export function ContractsManagerDialog({
               <Database className="size-5 text-primary" /> 合同数据管理
             </DialogTitle>
             <DialogDescription>
-              查看全部已保存合同及佣金计提情况。编辑和删除不受当前计提月份或销售人员筛选影响。
+              查看全部已保存合同及佣金计提情况。已有已计提记录的合同会自动锁定，避免改写财务历史。
             </DialogDescription>
           </DialogHeader>
 
@@ -255,33 +254,39 @@ export function ContractsManagerDialog({
                           )}
                         </TableCell>
                         <TableCell className="pr-6">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="sm"
-                              type="button"
-                              variant="outline"
-                              onClick={() => editContract(contract)}
-                            >
-                              <PencilLine data-icon="inline-start" /> 编辑
-                            </Button>
-                            <Button
-                              disabled={deletingId === contract.id}
-                              size="sm"
-                              type="button"
-                              variant="destructive"
-                              onClick={() => setContractToDelete(contract)}
-                            >
-                              {deletingId === contract.id ? (
-                                <LoaderCircle
-                                  className="animate-spin"
-                                  data-icon="inline-start"
-                                />
-                              ) : (
-                                <Trash2 data-icon="inline-start" />
-                              )}
-                              删除
-                            </Button>
-                          </div>
+                          {contractAccruals.length ? (
+                            <p className="text-right text-xs text-muted-foreground">
+                              已锁定，保留计提历史
+                            </p>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                                onClick={() => editContract(contract)}
+                              >
+                                <PencilLine data-icon="inline-start" /> 编辑
+                              </Button>
+                              <Button
+                                disabled={deletingId === contract.id}
+                                size="sm"
+                                type="button"
+                                variant="destructive"
+                                onClick={() => setContractToDelete(contract)}
+                              >
+                                {deletingId === contract.id ? (
+                                  <LoaderCircle
+                                    className="animate-spin"
+                                    data-icon="inline-start"
+                                  />
+                                ) : (
+                                  <Trash2 data-icon="inline-start" />
+                                )}
+                                删除
+                              </Button>
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

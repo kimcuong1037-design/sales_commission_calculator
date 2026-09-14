@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  commissionAccrualInputSchema,
+  commissionAccrualRequestSchema,
   installmentCommissionRecordId,
   unifiedCommissionRecordId,
 } from '../lib/commission-accruals.ts';
+import { resolveCommissionAccrual } from '../lib/commission-accrual-resolution.ts';
 import {
   contractsToCommissionRecords,
   emptyContract,
@@ -22,6 +23,8 @@ void test('uses a stable commission record id across contract edits', () => {
     contract_name: '测试合同',
     contract_number: 'TEST-001',
     salesperson: '测试销售',
+    signed_date: '2026-09-01',
+    delivery_requirement: '当月交付',
     annual_contract_amount: 50_000,
     related_contract_status: 'checked_none',
     installments: [
@@ -62,22 +65,92 @@ void test('uses a stable commission record id across contract edits', () => {
   assert.equal(unifiedCommissionRecordId('contract-1'), 'contract-1:unified');
 });
 
-void test('validates the accounting accrual snapshot', () => {
-  const valid = commissionAccrualInputSchema.safeParse({
+void test('validates the accounting accrual request month', () => {
+  const valid = commissionAccrualRequestSchema.safeParse({
     record_id: 'contract-1:installment:1',
     contract_id: 'contract-1',
     settlement_month: '2026-09',
-    salesperson: '测试销售',
-    commission_amount: 5_000,
   });
   assert.equal(valid.success, true);
 
-  const invalid = commissionAccrualInputSchema.safeParse({
+  const invalid = commissionAccrualRequestSchema.safeParse({
     record_id: 'contract-1:installment:1',
     contract_id: 'contract-1',
-    settlement_month: '2026/09',
-    salesperson: '测试销售',
-    commission_amount: 0,
+    settlement_month: '2026-99',
   });
   assert.equal(invalid.success, false);
+});
+
+void test('recalculates the accrual amount and salesperson from contract data', () => {
+  const contract: StoredContract = {
+    ...emptyContract(),
+    id: 'contract-1',
+    created_at: '2026-09-01T00:00:00.000Z',
+    customer_name: '测试客户',
+    contract_name: '测试合同',
+    contract_number: 'TEST-001',
+    salesperson: '测试销售',
+    signed_date: '2026-09-01',
+    delivery_requirement: '当月交付',
+    annual_contract_amount: 50_000,
+    related_contract_status: 'checked_none',
+    installments: [
+      {
+        ...emptyInstallment(1),
+        id: 'installment-1',
+        planned_amount: 50_000,
+        received_amount: 50_000,
+        due_date: '2026-09-10',
+        received_date: '2026-09-10',
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    resolveCommissionAccrual([contract], {
+      record_id: installmentCommissionRecordId('contract-1', 1),
+      contract_id: 'contract-1',
+      settlement_month: '2026-09',
+    }),
+    {
+      record_id: 'contract-1:installment:1',
+      contract_id: 'contract-1',
+      settlement_month: '2026-09',
+      salesperson: '测试销售',
+      commission_amount: 5_000,
+    },
+  );
+});
+
+void test('rejects a stale accrual record from another settlement month', () => {
+  const contract: StoredContract = {
+    ...emptyContract(),
+    id: 'contract-1',
+    created_at: '2026-09-01T00:00:00.000Z',
+    customer_name: '测试客户',
+    contract_name: '测试合同',
+    contract_number: 'TEST-001',
+    salesperson: '测试销售',
+    annual_contract_amount: 50_000,
+    related_contract_status: 'checked_none',
+    installments: [
+      {
+        ...emptyInstallment(1),
+        id: 'installment-1',
+        received_amount: 50_000,
+        due_date: '2026-09-10',
+        received_date: '2026-09-10',
+      },
+    ],
+  };
+
+  assert.throws(
+    () =>
+      resolveCommissionAccrual([contract], {
+        record_id: installmentCommissionRecordId('contract-1', 1),
+        contract_id: 'contract-1',
+        settlement_month: '2026-10',
+      }),
+    /STALE_RECORD/,
+  );
 });

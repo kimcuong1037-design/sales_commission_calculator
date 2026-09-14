@@ -1,16 +1,21 @@
 import { z } from 'zod';
 
-export const commissionAccrualInputSchema = z.object({
+export const commissionAccrualRequestSchema = z.object({
   record_id: z.string().trim().min(1, '缺少提成记录编号'),
   contract_id: z.string().trim().min(1, '缺少合同记录编号'),
-  settlement_month: z.string().regex(/^\d{4}-\d{2}$/, '计提月份格式不正确'),
-  salesperson: z.string().trim().min(1, '缺少销售人员'),
-  commission_amount: z.number().positive('提成金额必须大于 0'),
+  settlement_month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, '计提月份格式不正确'),
 });
 
-export type CommissionAccrualInput = z.infer<
-  typeof commissionAccrualInputSchema
+export type CommissionAccrualRequest = z.infer<
+  typeof commissionAccrualRequestSchema
 >;
+
+export interface CommissionAccrualInput extends CommissionAccrualRequest {
+  salesperson: string;
+  commission_amount: number;
+}
 
 export type CommissionAccrualStatus = 'unaccrued' | 'accrued';
 

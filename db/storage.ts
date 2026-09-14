@@ -82,6 +82,46 @@ export async function ensureDatabase() {
         accrued_at TEXT NOT NULL
       )
     `),
+    db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS protect_accrued_contract_delete
+      BEFORE DELETE ON contracts
+      WHEN EXISTS (
+        SELECT 1 FROM commission_accruals WHERE contract_id = OLD.id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
+      END
+    `),
+    db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS protect_accrued_contract_update
+      BEFORE UPDATE ON contracts
+      WHEN EXISTS (
+        SELECT 1 FROM commission_accruals WHERE contract_id = OLD.id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
+      END
+    `),
+    db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS protect_accrued_installment_delete
+      BEFORE DELETE ON installments
+      WHEN EXISTS (
+        SELECT 1 FROM commission_accruals WHERE contract_id = OLD.contract_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
+      END
+    `),
+    db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS protect_accrued_installment_update
+      BEFORE UPDATE ON installments
+      WHEN EXISTS (
+        SELECT 1 FROM commission_accruals WHERE contract_id = OLD.contract_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
+      END
+    `),
     db.prepare(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_contract_number ON contracts(contract_number)',
     ),
@@ -100,22 +140,18 @@ export async function ensureDatabase() {
 }
 
 type ContractRow = Record<string, string | number | null>;
-type InstallmentRow = Record<string, string | number | null>;
 
 const asBoolean = (value: string | number | null) => Boolean(value);
 
 export async function listContracts(): Promise<StoredContract[]> {
   await ensureDatabase();
   const db = database();
-  const [contractQuery, installmentQuery] = await Promise.all([
-    db
-      .prepare('SELECT * FROM contracts ORDER BY created_at DESC')
-      .all<ContractRow>(),
+  const [contractQuery, installmentQuery] = await db.batch<ContractRow>([
+    db.prepare('SELECT * FROM contracts ORDER BY created_at DESC'),
     db
       .prepare(
         'SELECT * FROM installments ORDER BY contract_id, installment_no',
-      )
-      .all<InstallmentRow>(),
+      ),
   ]);
   const installmentRows = installmentQuery.results ?? [];
   return (contractQuery.results ?? []).map((row) => ({
@@ -295,6 +331,11 @@ export async function updateContract(id: string, input: ContractInput) {
     .bind(id)
     .first();
   if (!existing) throw new Error('NOT_FOUND');
+  const accrued = await db
+    .prepare('SELECT record_id FROM commission_accruals WHERE contract_id = ? LIMIT 1')
+    .bind(id)
+    .first();
+  if (accrued) throw new Error('ACCRUED_CONTRACT');
   const statements = [
     db
       .prepare(`
@@ -382,6 +423,11 @@ export async function deleteContract(id: string) {
     .bind(id)
     .first();
   if (!existing) throw new Error('NOT_FOUND');
+  const accrued = await db
+    .prepare('SELECT record_id FROM commission_accruals WHERE contract_id = ? LIMIT 1')
+    .bind(id)
+    .first();
+  if (accrued) throw new Error('ACCRUED_CONTRACT');
   await db.batch([
     db.prepare('DELETE FROM installments WHERE contract_id = ?').bind(id),
     db.prepare('DELETE FROM contracts WHERE id = ?').bind(id),
