@@ -6,8 +6,10 @@ import {
   Calculator,
   CalendarDays,
   Check,
+  CircleCheckBig,
   ChevronRight,
   CircleDollarSign,
+  Clock3,
   Clipboard,
   FilePlus2,
   Landmark,
@@ -23,6 +25,17 @@ import { ContractDialog } from '@/app/contract-dialog';
 import { ContractsManagerDialog } from '@/app/contracts-manager-dialog';
 import { ImportContractsDialog } from '@/app/import-contracts-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,7 +50,15 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import { calculateCommission } from '@/lib/commission-engine';
+import {
+  installmentCommissionRecordId,
+  unifiedCommissionRecordId,
+  type CommissionAccrual,
+} from '@/lib/commission-accruals';
+import {
+  calculateCommission,
+  type CommissionResult,
+} from '@/lib/commission-engine';
 import {
   BUSINESS_TYPE_LABELS,
   STATUS_LABELS,
@@ -69,18 +90,36 @@ export function CommissionWorkspace({
   const [returnToManager, setReturnToManager] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedResultId, setSelectedResultId] = useState('');
+  const [accruals, setAccruals] = useState<CommissionAccrual[]>([]);
+  const [pendingAccrual, setPendingAccrual] = useState<CommissionResult | null>(
+    null,
+  );
+  const [isAccruing, setIsAccruing] = useState(false);
+  const [accrualError, setAccrualError] = useState('');
 
   const loadContracts = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const response = await fetch('/api/contracts', { cache: 'no-store' });
-      const body = (await response.json()) as {
-        contracts?: StoredContract[];
-        error?: string;
-      };
-      if (!response.ok) throw new Error(body.error ?? '暂时无法读取合同台账');
-      setContracts(body.contracts ?? []);
+      const [contractsResponse, accrualsResponse] = await Promise.all([
+        fetch('/api/contracts', { cache: 'no-store' }),
+        fetch('/api/commissions/accruals', { cache: 'no-store' }),
+      ]);
+      const [contractsBody, accrualsBody] = (await Promise.all([
+        contractsResponse.json(),
+        accrualsResponse.json(),
+      ])) as [
+        { contracts?: StoredContract[]; error?: string },
+        { accruals?: CommissionAccrual[]; error?: string },
+      ];
+      if (!contractsResponse.ok) {
+        throw new Error(contractsBody.error ?? '暂时无法读取合同台账');
+      }
+      if (!accrualsResponse.ok) {
+        throw new Error(accrualsBody.error ?? '暂时无法读取财务计提状态');
+      }
+      setContracts(contractsBody.contracts ?? []);
+      setAccruals(accrualsBody.accruals ?? []);
     } catch (error) {
       setLoadError(
         error instanceof Error ? error.message : '暂时无法读取合同台账',
@@ -136,18 +175,71 @@ export function CommissionWorkspace({
     ) ??
     calculation.results[0] ??
     null;
+  const accrualByRecordId = useMemo(
+    () => new Map(accruals.map((accrual) => [accrual.record_id, accrual])),
+    [accruals],
+  );
+  const selectedAccrual = selectedResult
+    ? accrualByRecordId.get(selectedResult.record_id)
+    : undefined;
   const editableSelectedContract = useMemo(() => {
     if (!selectedResult || usingDemo) return null;
     return (
-      contracts.find(
-        (contract) =>
-          selectedResult.record_id === `${contract.id}:unified` ||
-          contract.installments.some(
-            (installment) => installment.id === selectedResult.record_id,
-          ),
+      contracts.find((contract) =>
+        commissionBelongsToContract(selectedResult.record_id, contract),
       ) ?? null
     );
   }, [contracts, selectedResult, usingDemo]);
+
+  const requestAccrual = (result: CommissionResult) => {
+    setSelectedResultId(result.record_id);
+    setAccrualError('');
+    setPendingAccrual(result);
+  };
+
+  const markAccrued = async () => {
+    if (!pendingAccrual) return;
+    const contract = contracts.find((item) =>
+      commissionBelongsToContract(pendingAccrual.record_id, item),
+    );
+    if (!contract || pendingAccrual.status !== 'normal') {
+      setAccrualError('当前记录还不能标记为已计提，请刷新后重试。');
+      return;
+    }
+    setIsAccruing(true);
+    setAccrualError('');
+    try {
+      const response = await fetch('/api/commissions/accruals', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          record_id: pendingAccrual.record_id,
+          contract_id: contract.id,
+          settlement_month: settlementMonth,
+          salesperson: pendingAccrual.salesperson,
+          commission_amount: pendingAccrual.gross_commission_preview ?? 0,
+        }),
+      });
+      const body = (await response.json()) as {
+        accrual?: CommissionAccrual;
+        error?: string;
+      };
+      if (!response.ok || !body.accrual) {
+        throw new Error(body.error ?? '计提状态保存失败');
+      }
+      setAccruals((current) => [
+        body.accrual!,
+        ...current.filter((item) => item.record_id !== body.accrual!.record_id),
+      ]);
+      setPendingAccrual(null);
+    } catch (error) {
+      setAccrualError(
+        error instanceof Error ? error.message : '计提状态保存失败，请稍后重试',
+      );
+    } finally {
+      setIsAccruing(false);
+    }
+  };
 
   const copyExplanation = async () => {
     try {
@@ -370,56 +462,99 @@ export function CommissionWorkspace({
                   </div>
                 ) : calculation.results.length ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[760px] border-collapse text-left">
+                    <table className="w-full min-w-[940px] border-collapse text-left">
                       <thead>
                         <tr className="table-head">
                           <th>客户 / 合同</th>
                           <th>计提基数</th>
                           <th>销售应得预览</th>
-                          <th>结果</th>
+                          <th>计算结果</th>
+                          <th>财务计提状态</th>
                           <th aria-label="查看计算详情" />
                         </tr>
                       </thead>
                       <tbody>
-                        {calculation.results.map((result) => (
-                          <tr
-                            className={`table-row ${selectedResult?.record_id === result.record_id ? 'is-selected' : ''}`}
-                            key={result.record_id}
-                          >
-                            <td>
-                              <strong>{result.customer_name}</strong>
-                              <span>
-                                {result.contract_name ?? result.contract_id} ·{' '}
-                                {result.contract_id}
-                              </span>
-                            </td>
-                            <td className="numeric-cell">
-                              {formatCurrency(result.commission_basis)}
-                            </td>
-                            <td className="numeric-cell">
-                              {formatCurrency(result.sales_payable_preview)}
-                            </td>
-                            <td>
-                              <span
-                                className={`status-pill status-${result.status}`}
-                              >
-                                {STATUS_LABELS[result.status]}
-                              </span>
-                            </td>
-                            <td>
-                              <Button
-                                aria-label={`查看 ${result.contract_name ?? result.contract_id} 计算详情`}
-                                variant="ghost"
-                                size="icon"
-                                onClick={() =>
-                                  setSelectedResultId(result.record_id)
-                                }
-                              >
-                                <ChevronRight />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
+                        {calculation.results.map((result) => {
+                          const accrual = accrualByRecordId.get(
+                            result.record_id,
+                          );
+                          const canAccrue =
+                            !usingDemo &&
+                            result.status === 'normal' &&
+                            (result.gross_commission_preview ?? 0) > 0;
+                          return (
+                            <tr
+                              className={`table-row ${selectedResult?.record_id === result.record_id ? 'is-selected' : ''}`}
+                              key={result.record_id}
+                            >
+                              <td>
+                                <strong>{result.customer_name}</strong>
+                                <span>
+                                  {result.contract_name ?? result.contract_id} ·{' '}
+                                  {result.contract_id}
+                                </span>
+                              </td>
+                              <td className="numeric-cell">
+                                {formatCurrency(result.commission_basis)}
+                              </td>
+                              <td className="numeric-cell">
+                                {formatCurrency(result.sales_payable_preview)}
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-pill status-${result.status}`}
+                                >
+                                  {STATUS_LABELS[result.status]}
+                                </span>
+                              </td>
+                              <td className="min-w-[158px]">
+                                {accrual ? (
+                                  <div className="accrual-state">
+                                    <span className="accrual-pill is-accrued">
+                                      <CircleCheckBig /> 已计提
+                                    </span>
+                                    <small>
+                                      {formatAccruedAt(accrual.accrued_at)}
+                                    </small>
+                                  </div>
+                                ) : canAccrue ? (
+                                  <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => requestAccrual(result)}
+                                  >
+                                    <CircleCheckBig data-icon="inline-start" />
+                                    标记已计提
+                                  </Button>
+                                ) : (
+                                  <div className="accrual-state">
+                                    <span className="accrual-pill">
+                                      <Clock3 /> 未计提
+                                    </span>
+                                    <small>
+                                      {usingDemo
+                                        ? '演示记录'
+                                        : '需先达到可计发'}
+                                    </small>
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <Button
+                                  aria-label={`查看 ${result.contract_name ?? result.contract_id} 计算详情`}
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    setSelectedResultId(result.record_id)
+                                  }
+                                >
+                                  <ChevronRight />
+                                </Button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -505,6 +640,28 @@ export function CommissionWorkspace({
                   <Detail
                     label="销售本人预览"
                     value={formatCurrency(selectedResult.sales_payable_preview)}
+                  />
+                  <Detail
+                    label="财务计提状态"
+                    value={
+                      selectedAccrual ? (
+                        <span className="accrual-pill is-accrued">
+                          <CircleCheckBig /> 已计提
+                        </span>
+                      ) : (
+                        <span className="accrual-pill">
+                          <Clock3 /> 未计提
+                        </span>
+                      )
+                    }
+                  />
+                  <Detail
+                    label="已计提时间"
+                    value={
+                      selectedAccrual
+                        ? formatAccruedAt(selectedAccrual.accrued_at)
+                        : '—'
+                    }
                   />
                   {selectedResult.issues.length > 0 && (
                     <div className="detail-issues">
@@ -618,8 +775,84 @@ export function CommissionWorkspace({
         onOpenChange={setImportOpen}
         onImported={loadContracts}
       />
+      <AlertDialog
+        open={Boolean(pendingAccrual)}
+        onOpenChange={(open) => {
+          if (!open && !isAccruing) {
+            setPendingAccrual(null);
+            setAccrualError('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-primary/10 text-primary">
+              <CircleCheckBig />
+            </AlertDialogMedia>
+            <AlertDialogTitle>确认标记为已计提？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAccrual
+                ? `${pendingAccrual.customer_name}《${pendingAccrual.contract_name ?? pendingAccrual.contract_id}》本笔提成总额为 ${formatCurrency(pendingAccrual.gross_commission_preview)}。确认后将保留首次计提时间。`
+                : '确认后将保留首次计提时间。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {accrualError && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>{accrualError}</AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isAccruing}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isAccruing}
+              onClick={() => void markAccrued()}
+            >
+              {isAccruing ? (
+                <LoaderCircle
+                  className="animate-spin"
+                  data-icon="inline-start"
+                />
+              ) : (
+                <CircleCheckBig data-icon="inline-start" />
+              )}
+              {isAccruing ? '正在保存…' : '确认已计提'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
+}
+
+function commissionBelongsToContract(
+  recordId: string,
+  contract: StoredContract,
+) {
+  return (
+    recordId === unifiedCommissionRecordId(contract.id) ||
+    contract.installments.some(
+      (installment) =>
+        recordId ===
+        installmentCommissionRecordId(contract.id, installment.installment_no),
+    )
+  );
+}
+
+const accruedDateTime = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function formatAccruedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '时间待核对'
+    : accruedDateTime.format(date);
 }
 
 function Detail({ label, value }: { label: string; value: React.ReactNode }) {

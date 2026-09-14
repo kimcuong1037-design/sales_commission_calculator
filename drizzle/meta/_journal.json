@@ -15,6 +15,13 @@
       "when": 1789290748218,
       "tag": "0001_clear_test_data",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789344139370,
+      "tag": "0002_powerful_natasha_romanoff",
+      "breakpoints": true
     }
   ]
 }

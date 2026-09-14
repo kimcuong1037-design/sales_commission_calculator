@@ -1,5 +1,11 @@
 import { env } from 'cloudflare:workers';
 
+import {
+  installmentCommissionRecordId,
+  unifiedCommissionRecordId,
+  type CommissionAccrual,
+  type CommissionAccrualInput,
+} from '@/lib/commission-accruals';
 import type { ContractInput, StoredContract } from '@/lib/contracts';
 
 let initialized = false;
@@ -63,6 +69,17 @@ export async function ensureDatabase() {
         delivery_ahead_30_days INTEGER NOT NULL,
         delivery_evidence TEXT,
         discount_approval_reference TEXT
+      )
+    `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS commission_accruals (
+        record_id TEXT PRIMARY KEY,
+        contract_id TEXT NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+        settlement_month TEXT NOT NULL,
+        salesperson TEXT NOT NULL,
+        commission_amount REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'accrued',
+        accrued_at TEXT NOT NULL
       )
     `),
     db.prepare(
@@ -404,4 +421,86 @@ export async function createContracts(inputs: ContractInput[]) {
     }
   }
   return { created, skipped };
+}
+
+type CommissionAccrualRow = Record<string, string | number | null>;
+
+function mapCommissionAccrual(row: CommissionAccrualRow): CommissionAccrual {
+  return {
+    record_id: String(row.record_id),
+    contract_id: String(row.contract_id),
+    settlement_month: String(row.settlement_month),
+    salesperson: String(row.salesperson),
+    commission_amount: Number(row.commission_amount),
+    status: 'accrued',
+    accrued_at: String(row.accrued_at),
+  };
+}
+
+export async function listCommissionAccruals(): Promise<CommissionAccrual[]> {
+  await ensureDatabase();
+  const query = await database()
+    .prepare(
+      "SELECT * FROM commission_accruals WHERE status = 'accrued' ORDER BY accrued_at DESC",
+    )
+    .all<CommissionAccrualRow>();
+  return (query.results ?? []).map(mapCommissionAccrual);
+}
+
+export async function markCommissionAccrued(
+  input: CommissionAccrualInput,
+): Promise<CommissionAccrual> {
+  await ensureDatabase();
+  const db = database();
+  const contract = await db
+    .prepare('SELECT id FROM contracts WHERE id = ?')
+    .bind(input.contract_id)
+    .first();
+  if (!contract) throw new Error('NOT_FOUND');
+
+  const unifiedId = unifiedCommissionRecordId(input.contract_id);
+  if (input.record_id !== unifiedId) {
+    const prefix = `${input.contract_id}:installment:`;
+    if (!input.record_id.startsWith(prefix)) throw new Error('INVALID_RECORD');
+    const installmentNo = Number(input.record_id.slice(prefix.length));
+    if (
+      !Number.isInteger(installmentNo) ||
+      installmentNo <= 0 ||
+      input.record_id !==
+        installmentCommissionRecordId(input.contract_id, installmentNo)
+    ) {
+      throw new Error('INVALID_RECORD');
+    }
+    const installment = await db
+      .prepare(
+        'SELECT id FROM installments WHERE contract_id = ? AND installment_no = ?',
+      )
+      .bind(input.contract_id, installmentNo)
+      .first();
+    if (!installment) throw new Error('NOT_FOUND');
+  }
+
+  await db
+    .prepare(`
+      INSERT OR IGNORE INTO commission_accruals (
+        record_id, contract_id, settlement_month, salesperson,
+        commission_amount, status, accrued_at
+      ) VALUES (?, ?, ?, ?, ?, 'accrued', ?)
+    `)
+    .bind(
+      input.record_id,
+      input.contract_id,
+      input.settlement_month,
+      input.salesperson,
+      input.commission_amount,
+      new Date().toISOString(),
+    )
+    .run();
+
+  const saved = await db
+    .prepare('SELECT * FROM commission_accruals WHERE record_id = ?')
+    .bind(input.record_id)
+    .first<CommissionAccrualRow>();
+  if (!saved) throw new Error('SAVE_FAILED');
+  return mapCommissionAccrual(saved);
 }

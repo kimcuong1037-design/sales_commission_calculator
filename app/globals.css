@@ -131,7 +131,11 @@
 
 body {
   background-image:
-    radial-gradient(circle at 12% -10%, rgb(255 255 255 / 88%), transparent 34rem),
+    radial-gradient(
+      circle at 12% -10%,
+      rgb(255 255 255 / 88%),
+      transparent 34rem
+    ),
     linear-gradient(to bottom, transparent, rgb(230 225 208 / 18%));
 }
 
@@ -219,7 +223,11 @@ body {
 .result-card {
   border: 0;
   background:
-    radial-gradient(circle at 95% 0%, rgb(255 255 255 / 14%), transparent 16rem),
+    radial-gradient(
+      circle at 95% 0%,
+      rgb(255 255 255 / 14%),
+      transparent 16rem
+    ),
     oklch(0.35 0.075 165);
   color: white;
   box-shadow: 0 20px 55px rgb(20 72 57 / 18%);
@@ -310,6 +318,44 @@ body {
 .status-no_commission {
   background: oklch(0.93 0.012 70);
   color: oklch(0.47 0.025 60);
+}
+
+.accrual-state {
+  display: grid;
+  width: fit-content;
+  gap: 0.24rem;
+}
+
+.accrual-state small {
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.accrual-pill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.32rem;
+  border-radius: 999px;
+  background: var(--muted);
+  padding: 0.27rem 0.58rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.accrual-pill > svg {
+  height: 0.8rem;
+  width: 0.8rem;
+}
+
+.accrual-pill.is-accrued {
+  background: oklch(0.91 0.065 158);
+  color: oklch(0.34 0.095 162);
 }
 
 .evidence-note {
@@ -485,7 +531,9 @@ body {
   background: color-mix(in oklch, var(--accent), white 62%);
   padding: 1.5rem;
   text-align: center;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
 }
 
 .import-dropzone:hover {
@@ -566,7 +614,10 @@ body {
 
 .import-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) minmax(150px, 0.8fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(190px, 1.2fr) minmax(150px, 0.8fr) minmax(
+      220px,
+      1fr
+    );
   gap: 0.9rem;
   align-items: center;
   border-bottom: 1px solid var(--border);

@@ -7,6 +7,10 @@ import {
   type CommissionResult,
   discountDetails,
 } from './commission-engine.ts';
+import {
+  installmentCommissionRecordId,
+  unifiedCommissionRecordId,
+} from './commission-accruals.ts';
 
 const nullableNumber = z.number().min(0).nullable().optional();
 
@@ -251,7 +255,7 @@ export function contractsToCommissionRecords(
       if (!triggerDate.startsWith(settlementMonth)) continue;
       records.push({
         ...commonRecord(contract, sorted.at(-1)!),
-        record_id: `${contract.id}:unified`,
+        record_id: unifiedCommissionRecordId(contract.id),
         received_amount: sorted.reduce(
           (sum, item) => sum + item.received_amount,
           0,
@@ -329,7 +333,10 @@ function commonRecord(
   if (!contract.delivery_requirement)
     inputIssues.push('请补充交付或服务期限要求');
   return {
-    record_id: installment.id,
+    record_id: installmentCommissionRecordId(
+      contract.id,
+      installment.installment_no,
+    ),
     business_type: contract.business_type,
     customer_name: contract.customer_name,
     contract_name: contract.contract_name,
