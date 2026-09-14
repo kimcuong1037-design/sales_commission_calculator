@@ -22,6 +22,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import { getApiErrorMessage } from '@/lib/api-response';
 import {
   type ContractInput,
   type StoredContract,
@@ -81,14 +82,15 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
 
   const save = handleSubmit(async (values) => {
     try {
-      const response = await fetch('/api/contracts', {
-        method: isEditing ? 'PUT' : 'POST',
+      const response = await fetch(isEditing ? '/api/contracts/update' : '/api/contracts', {
+        method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(isEditing ? { ...values, id: initialContract!.id } : values),
       });
-      const body = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError('root', { message: body.error ?? '合同保存失败' });
+        setError('root', {
+          message: await getApiErrorMessage(response, '合同保存失败'),
+        });
         return;
       }
       await onSaved();

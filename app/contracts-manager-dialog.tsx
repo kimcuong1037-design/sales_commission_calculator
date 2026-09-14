@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { getApiErrorMessage } from '@/lib/api-response';
 import {
   formatAccruedAt,
   type CommissionAccrual,
@@ -121,13 +122,16 @@ export function ContractsManagerDialog({
     setDeletingId(contractToDelete.id);
     setDeleteError('');
     try {
-      const response = await fetch('/api/contracts', {
-        method: 'DELETE',
+      const response = await fetch('/api/contracts/delete', {
+        method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: contractToDelete.id }),
       });
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? '合同删除失败');
+      if (!response.ok) {
+        throw new Error(
+          await getApiErrorMessage(response, '合同删除失败，请稍后重试'),
+        );
+      }
       setContractToDelete(null);
       await onChanged();
     } catch (error) {
