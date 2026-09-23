@@ -99,3 +99,19 @@ export const commissionAccruals = sqliteTable('commission_accruals', {
   status: text('status').notNull().default('accrued'),
   accruedAt: text('accrued_at').notNull(),
 });
+
+export const contractAttachments = sqliteTable(
+  'contract_attachments',
+  {
+    id: text('id').primaryKey(),
+    contractId: text('contract_id')
+      .notNull()
+      .references(() => contracts.id, { onDelete: 'cascade' }),
+    objectKey: text('object_key').notNull().unique(),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    uploadedAt: text('uploaded_at').notNull(),
+  },
+  (table) => [index('idx_contract_attachments_contract').on(table.contractId)],
+);

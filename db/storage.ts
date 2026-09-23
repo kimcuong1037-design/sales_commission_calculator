@@ -7,6 +7,7 @@ import {
   type CommissionAccrualInput,
 } from '@/lib/commission-accruals';
 import type { ContractInput, StoredContract } from '@/lib/contracts';
+import { assertContractEditableUpdate } from '@/lib/contract-editing';
 
 let initialized = false;
 
@@ -83,6 +84,20 @@ export async function ensureDatabase() {
       )
     `),
     db.prepare(`
+      CREATE TABLE IF NOT EXISTS contract_attachments (
+        id TEXT PRIMARY KEY,
+        contract_id TEXT NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+        object_key TEXT NOT NULL UNIQUE,
+        file_name TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        uploaded_at TEXT NOT NULL
+      )
+    `),
+    db.prepare(
+      'CREATE INDEX IF NOT EXISTS idx_contract_attachments_contract ON contract_attachments(contract_id)',
+    ),
+    db.prepare(`
       CREATE TRIGGER IF NOT EXISTS protect_accrued_contract_delete
       BEFORE DELETE ON contracts
       WHEN EXISTS (
@@ -102,21 +117,27 @@ export async function ensureDatabase() {
         SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
       END
     `),
+    db.prepare('DROP TRIGGER IF EXISTS protect_accrued_installment_delete'),
     db.prepare(`
-      CREATE TRIGGER IF NOT EXISTS protect_accrued_installment_delete
+      CREATE TRIGGER protect_accrued_installment_delete
       BEFORE DELETE ON installments
       WHEN EXISTS (
         SELECT 1 FROM commission_accruals WHERE contract_id = OLD.contract_id
+          AND (record_id = OLD.contract_id || ':unified'
+            OR record_id = OLD.contract_id || ':installment:' || OLD.installment_no)
       )
       BEGIN
         SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
       END
     `),
+    db.prepare('DROP TRIGGER IF EXISTS protect_accrued_installment_update'),
     db.prepare(`
-      CREATE TRIGGER IF NOT EXISTS protect_accrued_installment_update
+      CREATE TRIGGER protect_accrued_installment_update
       BEFORE UPDATE ON installments
       WHEN EXISTS (
         SELECT 1 FROM commission_accruals WHERE contract_id = OLD.contract_id
+          AND (record_id = OLD.contract_id || ':unified'
+            OR record_id = OLD.contract_id || ':installment:' || OLD.installment_no)
       )
       BEGIN
         SELECT RAISE(ABORT, 'ACCRUED_CONTRACT');
@@ -148,10 +169,9 @@ export async function listContracts(): Promise<StoredContract[]> {
   const db = database();
   const [contractQuery, installmentQuery] = await db.batch<ContractRow>([
     db.prepare('SELECT * FROM contracts ORDER BY created_at DESC'),
-    db
-      .prepare(
-        'SELECT * FROM installments ORDER BY contract_id, installment_no',
-      ),
+    db.prepare(
+      'SELECT * FROM installments ORDER BY contract_id, installment_no',
+    ),
   ]);
   const installmentRows = installmentQuery.results ?? [];
   return (contractQuery.results ?? []).map((row) => ({
@@ -326,19 +346,20 @@ function insertContractStatements(
 export async function updateContract(id: string, input: ContractInput) {
   await ensureDatabase();
   const db = database();
-  const existing = await db
-    .prepare('SELECT id FROM contracts WHERE id = ?')
-    .bind(id)
-    .first();
+  const existing = (await listContracts()).find(
+    (contract) => contract.id === id,
+  );
   if (!existing) throw new Error('NOT_FOUND');
-  const accrued = await db
-    .prepare('SELECT record_id FROM commission_accruals WHERE contract_id = ? LIMIT 1')
-    .bind(id)
-    .first();
-  if (accrued) throw new Error('ACCRUED_CONTRACT');
+  const state = assertContractEditableUpdate(
+    existing,
+    input,
+    await listCommissionAccruals(),
+  );
   const statements = [
-    db
-      .prepare(`
+    ...(!state.hasAccruals
+      ? [
+          db
+            .prepare(`
       UPDATE contracts SET
         customer_name = ?, contract_name = ?, contract_number = ?, salesperson = ?,
         business_type = ?, customer_source = ?, signed_date = ?, delivery_requirement = ?,
@@ -350,36 +371,49 @@ export async function updateContract(id: string, input: ContractInput) {
         gm_approval_reference = ?
       WHERE id = ?
     `)
-      .bind(
-        input.customer_name,
-        input.contract_name,
-        input.contract_number,
-        input.salesperson,
-        input.business_type,
-        input.customer_source,
-        input.signed_date,
-        input.delivery_requirement,
-        input.annual_contract_amount,
-        input.quoted_amount ?? null,
-        input.related_12m_amount ?? null,
-        input.related_contract_status,
-        Number(input.has_customization),
-        Number(input.has_staged_acceptance),
-        input.commission_mode,
-        Number(input.hold_approved),
-        input.hold_approval_reference || null,
-        Number(input.any_prior_commission_paid),
-        input.sales_share,
-        input.supervisor_share,
-        input.team_split_approval_reference || null,
-        input.approved_gm_gross_commission ?? null,
-        input.gm_approval_reference || null,
-        id,
-      ),
-    db.prepare('DELETE FROM installments WHERE contract_id = ?').bind(id),
-    ...input.installments.map((installment) =>
-      db
-        .prepare(`
+            .bind(
+              input.customer_name,
+              input.contract_name,
+              input.contract_number,
+              input.salesperson,
+              input.business_type,
+              input.customer_source,
+              input.signed_date,
+              input.delivery_requirement,
+              input.annual_contract_amount,
+              input.quoted_amount ?? null,
+              input.related_12m_amount ?? null,
+              input.related_contract_status,
+              Number(input.has_customization),
+              Number(input.has_staged_acceptance),
+              input.commission_mode,
+              Number(input.hold_approved),
+              input.hold_approval_reference || null,
+              Number(input.any_prior_commission_paid),
+              input.sales_share,
+              input.supervisor_share,
+              input.team_split_approval_reference || null,
+              input.approved_gm_gross_commission ?? null,
+              input.gm_approval_reference || null,
+              id,
+            ),
+        ]
+      : []),
+    db
+      .prepare(`DELETE FROM installments WHERE contract_id = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM commission_accruals a WHERE a.contract_id = installments.contract_id
+          AND (a.record_id = installments.contract_id || ':unified'
+            OR a.record_id = installments.contract_id || ':installment:' || installments.installment_no)
+      )`)
+      .bind(id),
+    ...input.installments
+      .filter(
+        (item) => !state.accruedInstallmentNumbers.has(item.installment_no),
+      )
+      .map((installment) =>
+        db
+          .prepare(`
         INSERT INTO installments (
           id, contract_id, installment_no, planned_amount, due_date, received_amount,
           received_date, implementation_fee_allocated, business_fee_allocated,
@@ -389,28 +423,28 @@ export async function updateContract(id: string, input: ContractInput) {
           discount_approval_reference
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
-        .bind(
-          crypto.randomUUID(),
-          id,
-          installment.installment_no,
-          installment.planned_amount,
-          installment.due_date,
-          installment.received_amount,
-          installment.received_date,
-          installment.implementation_fee_allocated,
-          installment.business_fee_allocated,
-          Number(installment.milestone_complete),
-          installment.cumulative_basis_before ?? null,
-          Number(installment.non_sales_delay),
-          installment.non_sales_delay_reason || null,
-          installment.non_sales_approval_reference || null,
-          Number(installment.early_payment_60_days),
-          installment.early_payment_evidence || null,
-          Number(installment.delivery_ahead_30_days),
-          installment.delivery_evidence || null,
-          installment.discount_approval_reference || null,
-        ),
-    ),
+          .bind(
+            crypto.randomUUID(),
+            id,
+            installment.installment_no,
+            installment.planned_amount,
+            installment.due_date,
+            installment.received_amount,
+            installment.received_date,
+            installment.implementation_fee_allocated,
+            installment.business_fee_allocated,
+            Number(installment.milestone_complete),
+            installment.cumulative_basis_before ?? null,
+            Number(installment.non_sales_delay),
+            installment.non_sales_delay_reason || null,
+            installment.non_sales_approval_reference || null,
+            Number(installment.early_payment_60_days),
+            installment.early_payment_evidence || null,
+            Number(installment.delivery_ahead_30_days),
+            installment.delivery_evidence || null,
+            installment.discount_approval_reference || null,
+          ),
+      ),
   ];
   await db.batch(statements);
 }
@@ -424,14 +458,33 @@ export async function deleteContract(id: string) {
     .first();
   if (!existing) throw new Error('NOT_FOUND');
   const accrued = await db
-    .prepare('SELECT record_id FROM commission_accruals WHERE contract_id = ? LIMIT 1')
+    .prepare(
+      'SELECT record_id FROM commission_accruals WHERE contract_id = ? LIMIT 1',
+    )
     .bind(id)
     .first();
   if (accrued) throw new Error('ACCRUED_CONTRACT');
+  const attachments = await db
+    .prepare(
+      'SELECT object_key FROM contract_attachments WHERE contract_id = ?',
+    )
+    .bind(id)
+    .all<{ object_key: string }>();
   await db.batch([
     db.prepare('DELETE FROM installments WHERE contract_id = ?').bind(id),
+    db
+      .prepare('DELETE FROM contract_attachments WHERE contract_id = ?')
+      .bind(id),
     db.prepare('DELETE FROM contracts WHERE id = ?').bind(id),
   ]);
+  const keys = attachments.results.map((attachment) => attachment.object_key);
+  if (keys.length && env.CONTRACT_FILES) {
+    try {
+      await env.CONTRACT_FILES.delete(keys);
+    } catch (error) {
+      console.error('Failed to clean up deleted contract attachments', error);
+    }
+  }
 }
 
 export async function createContracts(inputs: ContractInput[]) {

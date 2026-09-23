@@ -7,12 +7,14 @@ import {
   Database,
   LoaderCircle,
   PencilLine,
+  Paperclip,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { ContractAttachments } from '@/app/contract-attachments';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -72,6 +74,8 @@ export function ContractsManagerDialog({
   onChanged,
 }: ContractsManagerDialogProps) {
   const [query, setQuery] = useState('');
+  const [attachmentContract, setAttachmentContract] =
+    useState<StoredContract | null>(null);
   const [contractToDelete, setContractToDelete] =
     useState<StoredContract | null>(null);
   const [deletingId, setDeletingId] = useState('');
@@ -107,6 +111,7 @@ export function ContractsManagerDialog({
     onOpenChange(nextOpen);
     if (!nextOpen) {
       setQuery('');
+      setAttachmentContract(null);
       setDeleteError('');
       setContractToDelete(null);
     }
@@ -152,7 +157,7 @@ export function ContractsManagerDialog({
               <Database className="size-5 text-primary" /> 合同数据管理
             </DialogTitle>
             <DialogDescription>
-              查看全部已保存合同及佣金计提情况。已有已计提记录的合同会自动锁定，避免改写财务历史。
+              查看全部已保存合同及佣金计提情况。计提后仍可追加分期、编辑未计提分期。已有计提记录的合同不能删除。
             </DialogDescription>
           </DialogHeader>
 
@@ -254,39 +259,49 @@ export function ContractsManagerDialog({
                           )}
                         </TableCell>
                         <TableCell className="pr-6">
-                          {contractAccruals.length ? (
-                            <p className="text-right text-xs text-muted-foreground">
-                              已锁定，保留计提历史
-                            </p>
-                          ) : (
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                                onClick={() => editContract(contract)}
-                              >
-                                <PencilLine data-icon="inline-start" /> 编辑
-                              </Button>
-                              <Button
-                                disabled={deletingId === contract.id}
-                                size="sm"
-                                type="button"
-                                variant="destructive"
-                                onClick={() => setContractToDelete(contract)}
-                              >
-                                {deletingId === contract.id ? (
-                                  <LoaderCircle
-                                    className="animate-spin"
-                                    data-icon="inline-start"
-                                  />
-                                ) : (
-                                  <Trash2 data-icon="inline-start" />
-                                )}
-                                删除
-                              </Button>
-                            </div>
-                          )}
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={() => setAttachmentContract(contract)}
+                            >
+                              <Paperclip data-icon="inline-start" /> 合同附件
+                            </Button>
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={() => editContract(contract)}
+                            >
+                              <PencilLine data-icon="inline-start" /> 编辑
+                            </Button>
+                            <Button
+                              disabled={
+                                deletingId === contract.id ||
+                                contractAccruals.length > 0
+                              }
+                              title={
+                                contractAccruals.length
+                                  ? '已有计提记录，不能删除'
+                                  : undefined
+                              }
+                              size="sm"
+                              type="button"
+                              variant="destructive"
+                              onClick={() => setContractToDelete(contract)}
+                            >
+                              {deletingId === contract.id ? (
+                                <LoaderCircle
+                                  className="animate-spin"
+                                  data-icon="inline-start"
+                                />
+                              ) : (
+                                <Trash2 data-icon="inline-start" />
+                              )}
+                              删除
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -324,6 +339,36 @@ export function ContractsManagerDialog({
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={Boolean(attachmentContract)}
+        onOpenChange={(nextOpen) => !nextOpen && setAttachmentContract(null)}
+      >
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>合同附件</DialogTitle>
+            <DialogDescription>
+              {attachmentContract?.customer_name} ·{' '}
+              {attachmentContract?.contract_number}
+            </DialogDescription>
+          </DialogHeader>
+          {attachmentContract && (
+            <ContractAttachments
+              key={attachmentContract.id}
+              contractId={attachmentContract.id}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAttachmentContract(null)}
+            >
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog
         open={Boolean(contractToDelete)}
         onOpenChange={(nextOpen) => !nextOpen && setContractToDelete(null)}
@@ -336,8 +381,8 @@ export function ContractsManagerDialog({
             <AlertDialogTitle>确认删除这份合同？</AlertDialogTitle>
             <AlertDialogDescription>
               {contractToDelete
-                ? `${contractToDelete.customer_name} · ${contractToDelete.contract_number}，以及其 ${contractToDelete.installments.length} 期回款记录将被永久删除。`
-                : '合同及其分期回款记录将被永久删除。'}
+                ? `${contractToDelete.customer_name} · ${contractToDelete.contract_number}，以及其 ${contractToDelete.installments.length} 期回款记录及合同附件将被永久删除。`
+                : '合同及其分期回款记录及合同附件将被永久删除。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

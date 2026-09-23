@@ -1,8 +1,5 @@
 import { deleteContract, updateContract } from '@/db/storage';
-import {
-  apiRequestErrorResponse,
-  readJsonRequest,
-} from '@/lib/api-request';
+import { apiRequestErrorResponse, readJsonRequest } from '@/lib/api-request';
 import { contractSchema } from '@/lib/contracts';
 import { requireAuthenticatedSiteUser } from '@/lib/site-auth';
 
@@ -33,12 +30,24 @@ export async function handleUpdateContract(request: Request) {
         { status: 404 },
       );
     }
-    if (
-      error instanceof Error &&
-      error.message.includes('ACCRUED_CONTRACT')
-    ) {
+    if (error instanceof Error) {
+      const editErrors: Record<string, string> = {
+        ACCRUED_CONTRACT_DETAILS:
+          '已有计提记录，合同主要信息与提成规则不可修改；可继续编辑未计提分期。',
+        ACCRUED_INSTALLMENT:
+          '已计提分期不能修改、删除或重新编号，请只编辑未计提分期。',
+        ACCRUED_CALCULATION_CHANGED:
+          '此次修改会改变已计提分期的历史计算依据，请核对回款日期和累计基数。',
+      };
+      if (editErrors[error.message])
+        return Response.json(
+          { error: editErrors[error.message] },
+          { status: 409 },
+        );
+    }
+    if (error instanceof Error && error.message.includes('ACCRUED_CONTRACT')) {
       return Response.json(
-        { error: '该合同已有已计提记录。为保留财务历史，不能直接修改。' },
+        { error: '计提状态已发生变化，请刷新后重新编辑未计提分期。' },
         { status: 409 },
       );
     }
@@ -73,10 +82,7 @@ export async function handleDeleteContract(request: Request) {
         { status: 404 },
       );
     }
-    if (
-      error instanceof Error &&
-      error.message.includes('ACCRUED_CONTRACT')
-    ) {
+    if (error instanceof Error && error.message.includes('ACCRUED_CONTRACT')) {
       return Response.json(
         { error: '该合同已有已计提记录。为保留财务历史，不能删除。' },
         { status: 409 },

@@ -5,6 +5,7 @@ import { AlertCircle, CirclePlus, FileCheck2, Trash2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
 
+import { ContractAttachments } from '@/app/contract-attachments';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -22,6 +23,8 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import type { CommissionAccrual } from '@/lib/commission-accruals';
+import { contractAccrualState } from '@/lib/contract-editing';
 import { readApiResponse } from '@/lib/api-response';
 import {
   type ContractInput,
@@ -32,6 +35,7 @@ import {
 } from '@/lib/contracts';
 
 interface ContractDialogProps {
+  accruals: CommissionAccrual[];
   initialContract?: StoredContract | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,7 +47,7 @@ const nullableNumberOptions = {
   setValueAs: (value: string) => (value === '' ? null : Number(value)),
 };
 
-export function ContractDialog({ initialContract, open, onOpenChange, onSaved }: ContractDialogProps) {
+export function ContractDialog({ accruals, initialContract, open, onOpenChange, onSaved }: ContractDialogProps) {
   const {
     control,
     formState: { errors, isSubmitting },
@@ -63,6 +67,8 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   const installments = watch('installments');
   const relatedContractStatus = watch('related_contract_status');
   const isEditing = Boolean(initialContract?.id);
+  const accrualState = initialContract ? contractAccrualState(initialContract, accruals) : null;
+  const hasAccruals = accrualState?.hasAccruals ?? false;
   const supportsUnifiedCommission = businessType === 'saas_first' ||
     businessType === 'saas_private_first';
 
@@ -71,14 +77,14 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
   }, [initialContract, open, reset]);
 
   useEffect(() => {
-    if (relatedContractStatus !== 'checked_grouped') setValue('related_12m_amount', null);
-  }, [relatedContractStatus, setValue]);
+    if (!hasAccruals && relatedContractStatus !== 'checked_grouped') setValue('related_12m_amount', null);
+  }, [hasAccruals, relatedContractStatus, setValue]);
 
   useEffect(() => {
-    if (!supportsUnifiedCommission && commissionMode !== 'per_payment') {
+    if (!hasAccruals && !supportsUnifiedCommission && commissionMode !== 'per_payment') {
       setValue('commission_mode', 'per_payment');
     }
-  }, [commissionMode, setValue, supportsUnifiedCommission]);
+  }, [hasAccruals, commissionMode, setValue, supportsUnifiedCommission]);
 
   const close = (nextOpen: boolean) => {
     onOpenChange(nextOpen);
@@ -124,6 +130,13 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
               </Alert>
             )}
 
+            {hasAccruals && (
+              <Alert className="mb-5">
+                <AlertCircle />
+                <AlertDescription>已计提分期及合同主要信息、提成规则已保留，可继续编辑未计提分期，或添加后续分期。</AlertDescription>
+              </Alert>
+            )}
+            <fieldset disabled={hasAccruals} className="min-w-0">
             <section className="form-section" aria-labelledby="contract-basic-title">
               <div className="form-section-heading">
                 <span>01</span>
@@ -207,12 +220,14 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
 
               <div className="check-grid">
                 <CheckField
+                  disabled={hasAccruals}
                   control={control}
                   name="has_customization"
                   label="包含定制化开发"
                   hint="选择后按项目型规则处理"
                 />
                 <CheckField
+                  disabled={hasAccruals}
                   control={control}
                   name="has_staged_acceptance"
                   label="分阶段验收交付"
@@ -245,8 +260,8 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                 </div>
                 {commissionMode === 'hold_until_full' && (
                   <div className="check-grid">
-                    <CheckField control={control} name="hold_approved" label="已有事前统一计提依据" />
-                    <CheckField control={control} name="any_prior_commission_paid" label="此前已有一期正式发放" />
+                    <CheckField disabled={hasAccruals} control={control} name="hold_approved" label="已有事前统一计提依据" />
+                    <CheckField disabled={hasAccruals} control={control} name="any_prior_commission_paid" label="此前已有一期正式发放" />
                   </div>
                 )}
               </section>
@@ -281,6 +296,8 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
               </section>
             )}
 
+            </fieldset>
+
             <section className="form-section border-b-0 pb-0" aria-labelledby="installment-title">
               <div className="form-section-heading">
                 <span>{businessType === 'enterprise' ? '03' : '03'}</span>
@@ -292,7 +309,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                   className="ml-auto"
                   type="button"
                   variant="outline"
-                  onClick={() => append(emptyInstallment(fields.length + 1))}
+                  onClick={() => append(emptyInstallment(Math.max(0, ...installments.map((item) => item.installment_no)) + 1))}
                 >
                   <CirclePlus data-icon="inline-start" /> 添加一期
                 </Button>
@@ -301,18 +318,19 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
               <div className="space-y-4">
                 {fields.map((field, index) => {
                   const installment = installments[index];
+                  const accrued = accrualState?.accruedInstallmentNumbers.has(installment?.installment_no) ?? false;
                   return (
-                    <article className="installment-card" key={field.id}>
+                    <fieldset disabled={accrued} className="installment-card min-w-0" key={field.id}>
                       <div className="installment-heading">
                         <div>
-                          <span>第 {index + 1} 期</span>
+                          <span>第 {installment?.installment_no} 期{accrued ? ' · 已计提，已保留' : ''}</span>
                           <p>
                             {installment?.received_amount > 0 ? '已录入实际回款' : '付款计划'}
                           </p>
                         </div>
-                        {fields.length > 1 && (
+                        {fields.length > 1 && !accrued && (
                           <Button
-                            aria-label={`移除第 ${index + 1} 期`}
+                            aria-label={`移除第 ${installment?.installment_no} 期`}
                             type="button"
                             variant="ghost"
                             size="icon"
@@ -322,7 +340,7 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                           </Button>
                         )}
                       </div>
-                      <input type="hidden" value={index + 1} {...register(`installments.${index}.installment_no`, numberOptions)} />
+                      <input type="hidden" {...register(`installments.${index}.installment_no`, numberOptions)} />
                       <div className="form-grid sm:grid-cols-2 lg:grid-cols-4">
                         <FormField label="计划回款金额" error={errors.installments?.[index]?.planned_amount?.message}>
                           <Input min="0" step="0.01" type="number" {...register(`installments.${index}.planned_amount`, numberOptions)} />
@@ -368,13 +386,13 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
 
                       <div className="check-grid mt-4">
                         {businessType === 'enterprise' && (
-                          <CheckField control={control} name={`installments.${index}.milestone_complete`} label="本期里程碑已完成" />
+                          <CheckField disabled={accrued} control={control} name={`installments.${index}.milestone_complete`} label="本期里程碑已完成" />
                         )}
-                        <CheckField control={control} name={`installments.${index}.non_sales_delay`} label="延期已确认非销售责任" />
+                        <CheckField disabled={accrued} control={control} name={`installments.${index}.non_sales_delay`} label="延期已确认非销售责任" />
                         {businessType === 'enterprise' && (
                           <>
-                            <CheckField control={control} name={`installments.${index}.early_payment_60_days`} label="主动提前回款至少 60 天" />
-                            <CheckField control={control} name={`installments.${index}.delivery_ahead_30_days`} label="交付提前至少 30 天" />
+                            <CheckField disabled={accrued} control={control} name={`installments.${index}.early_payment_60_days`} label="主动提前回款至少 60 天" />
+                            <CheckField disabled={accrued} control={control} name={`installments.${index}.delivery_ahead_30_days`} label="交付提前至少 30 天" />
                           </>
                         )}
                       </div>
@@ -405,11 +423,14 @@ export function ContractDialog({ initialContract, open, onOpenChange, onSaved }:
                           )}
                         </div>
                       )}
-                    </article>
+                    </fieldset>
                   );
                 })}
               </div>
             </section>
+            <div className="mt-6 border-t pt-5">
+              <ContractAttachments key={initialContract?.id ?? 'new'} contractId={initialContract?.id} />
+            </div>
           </div>
 
           <DialogFooter className="m-0 px-4 py-4 sm:px-6">
@@ -449,11 +470,13 @@ function FormField({
 
 function CheckField({
   control,
+  disabled = false,
   hint,
   label,
   name,
 }: {
   control: ReturnType<typeof useForm<ContractInput>>['control'];
+  disabled?: boolean;
   hint?: string;
   label: string;
   name: Parameters<typeof control.register>[0];
@@ -465,6 +488,7 @@ function CheckField({
       render={({ field }) => (
         <label className="check-field">
           <Checkbox
+            disabled={disabled}
             checked={Boolean(field.value)}
             onCheckedChange={(checked) => field.onChange(Boolean(checked))}
           />

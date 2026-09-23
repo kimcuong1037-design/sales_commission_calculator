@@ -178,10 +178,6 @@ export function CommissionWorkspace({
     () => new Map(accruals.map((accrual) => [accrual.record_id, accrual])),
     [accruals],
   );
-  const accruedContractIds = useMemo(
-    () => new Set(accruals.map((accrual) => accrual.contract_id)),
-    [accruals],
-  );
   const selectedAccrual = selectedResult
     ? accrualByRecordId.get(selectedResult.record_id)
     : undefined;
@@ -190,11 +186,10 @@ export function CommissionWorkspace({
     return (
       contracts.find(
         (contract) =>
-          !accruedContractIds.has(contract.id) &&
           commissionBelongsToContract(selectedResult.record_id, contract),
       ) ?? null
     );
-  }, [accruedContractIds, contracts, selectedResult, usingDemo]);
+  }, [contracts, selectedResult, usingDemo]);
 
   const requestAccrual = (result: CommissionResult) => {
     setSelectedResultId(result.record_id);
@@ -756,6 +751,7 @@ export function CommissionWorkspace({
       </div>
 
       <ContractDialog
+        accruals={accruals}
         initialContract={editingContract}
         open={dialogOpen}
         onOpenChange={setContractDialogOpen}
